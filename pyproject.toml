@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "labgym-launcher"
+version = "0.1.0"
+description = "Team launcher for the official LabGym PyPI release and demo git commits."
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "Bobby Tomlinson" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "License :: OSI Approved :: MIT License",
+  "Private :: Do Not Upload",
+]
+
+[project.scripts]
+labgym-launcher = "labgym_launcher.cli:main"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
