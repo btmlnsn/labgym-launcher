@@ -1,0 +1,106 @@
+import io
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from labgym_launcher.backend import LauncherBackend
+from labgym_launcher.cli import main
+from fakes import FakeRunner
+
+
+class CliTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = TemporaryDirectory()
+        self.runner = FakeRunner()
+        self.launched = False
+        self.backend = LauncherBackend(
+            data_dir=Path(self.temp.name),
+            runner=self.runner,
+            python="python",
+            fetch_pypi_version=lambda: "3.0.1",
+            launch_impl=self._launch,
+        )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def _launch(self) -> int:
+        self.launched = True
+        return 0
+
+    def test_status(self) -> None:
+        stdout = io.StringIO()
+        code = main(["status"], backend=self.backend, stdin=io.StringIO(), stdout=stdout)
+        self.assertEqual(code, 0)
+        text = stdout.getvalue()
+        self.assertIn("Rollback to home: available", text)
+        self.assertIn("Home checkout:", text)
+        self.assertIn("Demo checkout:", text)
+
+    def test_home_requires_yes_before_install_and_launch(self) -> None:
+        stdout = io.StringIO()
+        code = main(
+            ["home"],
+            backend=self.backend,
+            stdin=io.StringIO("yes\n"),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("Proceed with installation?", stdout.getvalue())
+        self.assertTrue(self.launched)
+        self.assertTrue(self.runner.install_calls())
+
+    def test_home_cancel_preserves_environment(self) -> None:
+        stdout = io.StringIO()
+        code = main(
+            ["home"],
+            backend=self.backend,
+            stdin=io.StringIO("n\n"),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("Current environment was not changed", stdout.getvalue())
+        self.assertFalse(self.launched)
+        self.assertEqual(self.runner.install_calls(), [])
+
+    def test_demo_unresolved_hash_is_printed_and_does_not_launch(self) -> None:
+        stdout = io.StringIO()
+        code = main(
+            ["demo", "master"],
+            backend=self.backend,
+            stdin=io.StringIO(),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 1)
+        self.assertFalse(self.launched)
+        self.assertEqual(self.runner.install_calls(), [])
+
+    def test_demo_accepts_source_repo_and_hash(self) -> None:
+        stdout = io.StringIO()
+        code = main(
+            ["demo", "alice/LabGym", "abc1def"],
+            backend=self.backend,
+            stdin=io.StringIO("y\n"),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("alice/LabGym", stdout.getvalue())
+        self.assertTrue(self.launched)
+        demo_path = Path(self.temp.name) / "worktrees" / "demo"
+        self.assertIn(str(demo_path), self.runner.clone_destinations())
+
+    def test_rollback_does_not_launch(self) -> None:
+        stdout = io.StringIO()
+        code = main(
+            ["rollback"],
+            backend=self.backend,
+            stdin=io.StringIO("y\n"),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        self.assertFalse(self.launched)
+        self.assertIn("LabGym was not launched", stdout.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
