@@ -1,7 +1,9 @@
-"""LabGym Launcher backend and CLI.
+"""LabGym Launcher backend, CLI, and wxPython GUI.
 
-The wxPython GUI is not built in this stage. GUI work should stay thin and
-call :class:`LauncherBackend` plus :func:`format_confirmation`.
+Default: ``labgym-launcher`` or ``python -m labgym_launcher`` opens the GUI.
+CLI: ``labgym-launcher --cli ...`` or ``labgym-launcher-cli``.
+GUI extra: ``pip install 'labgym-launcher[gui]'`` (wxPython).
+The GUI stays thin and delegates policy to :class:`LauncherBackend`.
 """
 
 from labgym_launcher.backend import LauncherBackend

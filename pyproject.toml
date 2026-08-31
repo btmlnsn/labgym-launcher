@@ -17,8 +17,13 @@ classifiers = [
   "Private :: Do Not Upload",
 ]
 
+[project.optional-dependencies]
+gui = ["wxPython>=4.2"]
+
 [project.scripts]
-labgym-launcher = "labgym_launcher.cli:main"
+labgym-launcher = "labgym_launcher.dispatch:main"
+labgym-launcher-gui = "labgym_launcher.gui:main"
+labgym-launcher-cli = "labgym_launcher.cli:main"
 
 [tool.setuptools.package-dir]
 "" = "src"

@@ -1,4 +1,4 @@
-from labgym_launcher.cli import main
+from labgym_launcher.dispatch import main
 
 if __name__ == "__main__":
     raise SystemExit(main())
