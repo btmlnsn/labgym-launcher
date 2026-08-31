@@ -172,6 +172,24 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(len(installs), 1)
         self.assertIn(str(self.home_path), installs[0])
 
+    def test_launch_without_wait_starts_labgym_and_returns(self) -> None:
+        backend = LauncherBackend(
+            data_dir=self.data_dir,
+            runner=self.runner,
+            python="python",
+            fetch_pypi_version=lambda: "3.0.1",
+        )
+        confirmation = backend.prepare_home()
+        backend.apply(confirmation, approved=True)
+        backend.launch(wait=False)
+        self.assertEqual(self.runner.started, [("python", "-m", "LabGym")])
+        labgym_runs = [
+            call
+            for call in self.runner.calls
+            if len(call) >= 3 and call[1] == "-m" and call[2] == "LabGym"
+        ]
+        self.assertEqual(labgym_runs, [])
+
     def test_status_reports_rollback_and_checkouts(self) -> None:
         status = self.backend.status()
         self.assertTrue(status.rollback_available)
@@ -185,6 +203,58 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(confirmation.pip_spec, str(self.home_path))
         self.assertEqual(confirmation.source_repo, "umyelab/LabGym")
         self.assertEqual(confirmation.pypi_version, "3.0.1")
+
+    def test_preflight_skips_active_official_release(self) -> None:
+        confirmation = self.backend.prepare_home()
+        self.backend.apply(confirmation, approved=True)
+        preflight = self.backend.preflight_official_release()
+        self.assertTrue(preflight.skip_transition)
+
+    def test_preflight_does_not_skip_if_labgym_missing(self) -> None:
+        confirmation = self.backend.prepare_home()
+        self.backend.apply(confirmation, approved=True)
+        self.runner.pip_list = []
+        preflight = self.backend.preflight_official_release()
+        self.assertFalse(preflight.skip_transition)
+
+    def test_prepare_demo_records_source_branch_not_detached(self) -> None:
+        confirmation = self.backend.prepare_demo("abc1def")
+        self.assertEqual(confirmation.branch_name, "demo-branch")
+        from labgym_launcher.confirm import format_confirmation, format_selected_commit_label
+
+        details = format_confirmation(confirmation)
+        self.assertIn("Branch: demo-branch", details)
+        self.assertNotIn("detached commit", details)
+        label = format_selected_commit_label(
+            confirmation.source_repo,
+            confirmation.commit,
+            confirmation.branch_name,
+            confirmation.commit_subject,
+        )
+        self.assertLessEqual(len(label.splitlines()), 2)
+        self.assertNotIn("detached commit", label)
+        self.assertNotIn("Branch:", label)
+
+    def test_github_branch_used_when_remote_refs_missing(self) -> None:
+        self.runner.branches = {}
+        seen = []
+
+        def fetch_branches(source: str, sha: str):
+            seen.append((source, sha))
+            return ("release-prep",)
+
+        backend = LauncherBackend(
+            data_dir=self.data_dir,
+            runner=self.runner,
+            python="python",
+            fetch_pypi_version=lambda: "3.0.1",
+            fetch_commit_branches=fetch_branches,
+            launch_impl=self._launch,
+        )
+        confirmation = backend.prepare_demo("abc1def")
+        self.assertEqual(confirmation.branch_name, "release-prep")
+        self.assertEqual(seen[0][0], "umyelab/LabGym")
+        self.assertEqual(seen[0][1], DEMO_SHA)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from labgym_launcher.gitops import checkout_revision
+from labgym_launcher.gitops import checkout_revision, describe_commit
 from fakes import DEMO_SHA, HOME_SHA, FakeRunner
 
 
@@ -37,6 +37,30 @@ class CheckoutRevisionTests(unittest.TestCase):
             _checkout_calls(self.runner),
             [("git", "checkout", "--detach", "--force", DEMO_SHA)],
         )
+
+    def test_describe_commit_reads_branch_and_subject(self) -> None:
+        metadata = describe_commit(self.runner, self.repo, DEMO_SHA)
+        self.assertEqual(metadata.branch_name, "demo-branch")
+        self.assertEqual(metadata.subject, "Add selected-commit UI")
+        ref_calls = [call for call in self.runner.calls if "for-each-ref" in call]
+        self.assertTrue(ref_calls)
+        self.assertTrue(all("refs/remotes" in call for call in ref_calls))
+        self.assertFalse(any("refs/heads" in call for call in ref_calls))
+
+    def test_describe_commit_falls_back_when_no_branch(self) -> None:
+        self.runner.branches = {}
+        self.runner.subjects = {DEMO_SHA: "Detached work"}
+        metadata = describe_commit(self.runner, self.repo, DEMO_SHA)
+        self.assertIsNone(metadata.branch_name)
+        self.assertEqual(metadata.subject, "Detached work")
+
+    def test_source_branch_comes_from_containing_remote_ref(self) -> None:
+        self.runner.tip_branches = {}
+        self.runner.branches = {DEMO_SHA: "main"}
+        metadata = describe_commit(self.runner, self.repo, DEMO_SHA)
+        self.assertEqual(metadata.branch_name, "main")
+        contains = [call for call in self.runner.calls if "--contains" in call]
+        self.assertTrue(contains)
 
 
 if __name__ == "__main__":

@@ -33,9 +33,9 @@ class CliTests(unittest.TestCase):
         code = main(["status"], backend=self.backend, stdin=io.StringIO(), stdout=stdout)
         self.assertEqual(code, 0)
         text = stdout.getvalue()
-        self.assertIn("Rollback to home: available", text)
-        self.assertIn("Home checkout:", text)
-        self.assertIn("Demo checkout:", text)
+        self.assertIn("Rollback to Official Release: available", text)
+        self.assertIn("Official Release checkout:", text)
+        self.assertIn("Selected commit checkout:", text)
 
     def test_home_requires_yes_before_install_and_launch(self) -> None:
         stdout = io.StringIO()
@@ -100,6 +100,60 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(self.launched)
         self.assertIn("LabGym was not launched", stdout.getvalue())
+
+    def test_repeated_official_release_skips_install_prompt(self) -> None:
+        first = io.StringIO()
+        code = main(
+            ["home"],
+            backend=self.backend,
+            stdin=io.StringIO("yes\n"),
+            stdout=first,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("Proceed with installation?", first.getvalue())
+        self.runner.calls.clear()
+        stdout = io.StringIO()
+        code = main(
+            ["home"],
+            backend=self.backend,
+            stdin=io.StringIO(),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        text = stdout.getvalue()
+        self.assertIn("The Official Release was already active", text)
+        self.assertNotIn("Proceed with installation?", text)
+        self.assertTrue(self.launched)
+        self.assertFalse(
+            any(
+                call[:2] == ("git", "checkout") or "fetch" in call or "clone" in call
+                for call in self.runner.calls
+            )
+        )
+
+    def test_repeated_same_commit_skips_install_prompt(self) -> None:
+        first = io.StringIO()
+        code = main(
+            ["demo", "abc1def"],
+            backend=self.backend,
+            stdin=io.StringIO("y\n"),
+            stdout=first,
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("Proceed with installation?", first.getvalue())
+        self.runner.calls.clear()
+        stdout = io.StringIO()
+        code = main(
+            ["demo", "abc1def"],
+            backend=self.backend,
+            stdin=io.StringIO(),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        text = stdout.getvalue()
+        self.assertIn("The selected commit was already active", text)
+        self.assertNotIn("Proceed with installation?", text)
+        self.assertTrue(self.launched)
 
 
 if __name__ == "__main__":

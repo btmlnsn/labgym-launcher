@@ -33,6 +33,11 @@ class FakeRunner(CommandRunner):
         self.install_code = 0
         self.restore_code = 0
         self.launch_code = 0
+        self.started: List[tuple] = []
+        self.heads: Dict[str, str] = {}
+        self.subjects: Dict[str, str] = {DEMO_SHA: "Add selected-commit UI"}
+        self.branches: Dict[str, str] = {DEMO_SHA: "demo-branch"}
+        self.tip_branches: Optional[Dict[str, str]] = None
 
     def run(
         self,
@@ -50,6 +55,12 @@ class FakeRunner(CommandRunner):
         if len(argv) >= 3 and argv[1] == "-m" and argv[2] == "LabGym":
             return CommandResult(argv, self.launch_code, "", "")
         raise AssertionError("unexpected command: %s" % (argv,))
+
+    def start(self, args: Sequence[str], cwd: Optional[str] = None):
+        argv = tuple(str(part) for part in args)
+        self.started.append(argv)
+        self.cwds.append(cwd)
+        return argv
 
     def install_calls(self) -> List[tuple]:
         return [
@@ -84,16 +95,29 @@ class FakeRunner(CommandRunner):
         if "fetch" in argv:
             return CommandResult(argv, self.fetch_code, "", "")
         if "checkout" in argv:
+            if self.checkout_code == 0 and cwd:
+                self.heads[_path_key(cwd)] = argv[-1].lower()
             return CommandResult(argv, self.checkout_code, "", "")
         if "clean" in argv:
             return CommandResult(argv, self.clean_code, "", "")
         if "rev-parse" in argv:
-            return self._rev_parse(argv)
+            return self._rev_parse(argv, cwd)
+        if len(argv) > 1 and argv[1] == "log":
+            return self._log(argv)
+        if "for-each-ref" in argv:
+            return self._for_each_ref(argv)
+        if "symbolic-ref" in argv:
+            return CommandResult(argv, 1, "", "")
         raise AssertionError("unexpected git command: %s" % (argv,))
 
-    def _rev_parse(self, argv: tuple) -> CommandResult:
+    def _rev_parse(self, argv: tuple, cwd: Optional[str] = None) -> CommandResult:
         token = argv[-1]
         core = token[:-9] if token.endswith("^{commit}") else token
+        if core.upper() == "HEAD":
+            sha = self.heads.get(_path_key(cwd))
+            if not sha:
+                return CommandResult(argv, 1, "", "fatal: Needed a single revision")
+            return CommandResult(argv, 0, sha + "\n", "")
         if self.resolve_code != 0:
             return CommandResult(argv, self.resolve_code, "", self.resolve_stderr)
         if HASH_PATTERN.fullmatch(core) and not re.search(r"[.]" , core):
@@ -104,6 +128,30 @@ class FakeRunner(CommandRunner):
             )
             return CommandResult(argv, 0, stdout, "")
         return CommandResult(argv, 0, self.home_sha + "\n", "")
+
+    def _log(self, argv: tuple) -> CommandResult:
+        revision = argv[-1].lower()
+        subject = self.subjects.get(revision, "Test commit")
+        return CommandResult(argv, 0, subject + "\n", "")
+
+    def _for_each_ref(self, argv: tuple) -> CommandResult:
+        if "refs/heads" in argv and "refs/remotes" not in argv:
+            return CommandResult(argv, 0, "", "")
+        revision = ""
+        if "--points-at" in argv:
+            revision = argv[argv.index("--points-at") + 1].lower()
+            mapping = self.branches if self.tip_branches is None else self.tip_branches
+        elif "--contains" in argv:
+            revision = argv[argv.index("--contains") + 1].lower()
+            mapping = self.branches
+        else:
+            mapping = {}
+        branch = mapping.get(revision, "")
+        if not branch:
+            return CommandResult(argv, 0, "", "")
+        if not branch.startswith("origin/"):
+            branch = "origin/%s" % branch
+        return CommandResult(argv, 0, branch + "\n", "")
 
     def _pip(self, argv: tuple) -> CommandResult:
         if "list" in argv:
