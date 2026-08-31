@@ -1,7 +1,7 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from labgym_launcher.constants import (
     CANONICAL_SOURCE,
@@ -20,20 +20,24 @@ from labgym_launcher.errors import (
 )
 from labgym_launcher.gitops import (
     checkout_revision,
+    current_head,
+    describe_commit,
     github_url,
+    origin_matches,
     parse_demo_request,
     resolve_commit,
     resolve_release_tag,
     retarget_working_tree,
     validate_source_repo,
 )
-from labgym_launcher.models import Confirmation, DepChange, LauncherStatus
+from labgym_launcher.models import Confirmation, DepChange, LauncherStatus, PreflightResult
 from labgym_launcher.pipops import PipOps
 from labgym_launcher.runner import CommandRunner
 from labgym_launcher.state import load_state, save_state, state_value
 from labgym_launcher.support import (
     default_data_dir,
     demo_checkout_path,
+    fetch_github_branches_where_head,
     fetch_latest_pypi_version,
     home_checkout_path,
 )
@@ -41,6 +45,7 @@ from labgym_launcher.support import (
 LOGGER = logging.getLogger("labgym_launcher")
 
 PypiFetcher = Callable[[], str]
+CommitBranchFetcher = Callable[[str, str], Tuple[str, ...]]
 LaunchImpl = Callable[[], int]
 
 
@@ -80,6 +85,7 @@ class LauncherBackend:
         runner: Optional[CommandRunner] = None,
         python: Optional[str] = None,
         fetch_pypi_version: Optional[PypiFetcher] = None,
+        fetch_commit_branches: Optional[CommitBranchFetcher] = None,
         launch_impl: Optional[LaunchImpl] = None,
         canonical_source: str = CANONICAL_SOURCE,
     ) -> None:
@@ -87,6 +93,9 @@ class LauncherBackend:
         self.runner = runner or CommandRunner()
         self.python = python or sys.executable
         self.fetch_pypi_version = fetch_pypi_version or fetch_latest_pypi_version
+        self.fetch_commit_branches = (
+            fetch_commit_branches or fetch_github_branches_where_head
+        )
         self.launch_impl = launch_impl
         self.canonical_source = validate_source_repo(canonical_source)
         self.pip = PipOps(self.runner, self.python)
@@ -118,7 +127,7 @@ class LauncherBackend:
             commit=commit,
             pypi_version=version,
             extra_notes=(
-                "Home uses the persistent canonical checkout for official PyPI release %s (tag %s)."
+                "The Official Release uses the persistent canonical checkout for PyPI release %s (tag %s)."
                 % (version, tag),
             ),
         )
@@ -137,6 +146,12 @@ class LauncherBackend:
         retarget_working_tree(self.runner, self.demo_path, url, DEMO)
         full_hash = resolve_commit(self.runner, self.demo_path, requested, source)
         checkout_revision(self.runner, self.demo_path, full_hash)
+        metadata = describe_commit(self.runner, self.demo_path, full_hash)
+        branch_name = metadata.branch_name
+        if not branch_name:
+            github_branches = self.fetch_commit_branches(source, full_hash)
+            if github_branches:
+                branch_name = github_branches[0]
         return self._prepare(
             action=DEMO,
             requested=requested,
@@ -146,8 +161,10 @@ class LauncherBackend:
             checkout_path=str(self.demo_path),
             commit=full_hash,
             pypi_version=None,
+            branch_name=branch_name,
+            commit_subject=metadata.subject,
             extra_notes=(
-                "Demo retargets the same persistent checkout; a new clone is not created per commit.",
+                "A selected commit retargets the same persistent checkout; a new clone is not created per commit.",
             ),
         )
 
@@ -168,6 +185,8 @@ class LauncherBackend:
             changes=confirmation.changes,
             needs_install=confirmation.needs_install,
             notes=confirmation.notes,
+            branch_name=confirmation.branch_name,
+            commit_subject=confirmation.commit_subject,
         )
 
     def apply(self, confirmation: Confirmation, approved: bool = False) -> None:
@@ -202,35 +221,43 @@ class LauncherBackend:
                 message += (
                     "\nRestoring the previous snapshot also failed. "
                     "The environment may be mixed. "
-                    "Use rollback to restore the latest official LabGym PyPI release.\n"
+                    "Use rollback to restore the latest Official Release.\n"
                     "%s" % restore_error
                 )
             raise InstallFailedError(message) from exc
         self._save_success(confirmation)
 
-    def launch(self) -> None:
+    def launch(self, wait: bool = True) -> None:
         state = load_state(self.data_dir)
         checkout = state_value(state, "checkout_path")
         LOGGER.info(
-            "launching LabGym from checkout %s",
+            "launching LabGym from checkout %s wait=%s",
             checkout or "current environment",
+            wait,
         )
         if self.launch_impl is not None:
             code = self.launch_impl()
-        else:
-            result = self.runner.run(
-                [self.python, "-m", LABGYM_MODULE],
-                cwd=checkout,
-                capture=False,
-            )
-            code = result.returncode
-        if code != 0:
-            raise LaunchRefusedError(
-                "LabGym exited with status %s. "
-                "Unresolved hashes and dependency failures never reach launch. "
-                "If this followed a successful install, the selected revision remains installed "
-                "and rollback to home is available." % code
-            )
+            if wait and code != 0:
+                raise LaunchRefusedError(
+                    "LabGym exited with status %s. "
+                    "Unresolved hashes and dependency failures never reach launch. "
+                    "If this followed a successful install, the selected revision remains installed "
+                    "and rollback to the Official Release is available." % code
+                )
+            return
+        args = [self.python, "-m", LABGYM_MODULE]
+        if wait:
+            result = self.runner.run(args, cwd=checkout, capture=False)
+            if result.returncode != 0:
+                raise LaunchRefusedError(
+                    "LabGym exited with status %s. "
+                    "Unresolved hashes and dependency failures never reach launch. "
+                    "If this followed a successful install, the selected revision remains installed "
+                    "and rollback to the Official Release is available." % result.returncode
+                )
+            return
+        LOGGER.info("starting LabGym without waiting for the process to exit")
+        self.runner.start(args, cwd=checkout)
 
     def status(self) -> LauncherStatus:
         state = load_state(self.data_dir)
@@ -247,11 +274,115 @@ class LauncherBackend:
             installed_labgym=installed.get("labgym"),
             installed_source=source,
             checkout_path=state_value(state, "checkout_path"),
+            branch_name=state_value(state, "branch_name"),
+            commit_subject=state_value(state, "commit_subject"),
             home_checkout=str(self.home_path),
             demo_checkout=str(self.demo_path),
             data_dir=str(self.data_dir),
             rollback_available=True,
         )
+
+    def preflight_official_release(self) -> PreflightResult:
+        if self._official_release_is_active():
+            return PreflightResult(
+                skip_transition=True,
+                reason="The Official Release was already active.",
+            )
+        return PreflightResult(
+            skip_transition=False,
+            reason="A target change is required.",
+        )
+
+    def preflight_selected_commit(
+        self,
+        commit: str,
+        source_repo: Optional[str] = None,
+    ) -> PreflightResult:
+        source, requested = parse_demo_request(
+            [source_repo, commit] if source_repo else [commit],
+            default_source=self.canonical_source,
+        )
+        if self._selected_commit_is_active(source, requested):
+            return PreflightResult(
+                skip_transition=True,
+                reason="The selected commit was already active.",
+            )
+        return PreflightResult(
+            skip_transition=False,
+            reason="A target change is required.",
+        )
+
+    def _official_release_is_active(self) -> bool:
+        state = load_state(self.data_dir)
+        if state_value(state, "mode") != HOME:
+            return False
+        if state_value(state, "source_repo") != self.canonical_source:
+            return False
+        if not self._paths_equal(state_value(state, "checkout_path"), self.home_path):
+            return False
+        if not self._labgym_is_installed():
+            return False
+        commit = state_value(state, "commit")
+        return self._checkout_matches_target(
+            self.home_path,
+            commit,
+            github_url(self.canonical_source),
+        )
+
+    def _selected_commit_is_active(self, source: str, requested: str) -> bool:
+        state = load_state(self.data_dir)
+        if state_value(state, "mode") != DEMO:
+            return False
+        if state_value(state, "source_repo") != source:
+            return False
+        if not self._paths_equal(state_value(state, "checkout_path"), self.demo_path):
+            return False
+        if not self._commit_request_matches(requested, state):
+            return False
+        if not self._labgym_is_installed():
+            return False
+        commit = state_value(state, "commit")
+        return self._checkout_matches_target(
+            self.demo_path,
+            commit,
+            github_url(source),
+        )
+
+    def _commit_request_matches(self, requested: str, state: Dict[str, Any]) -> bool:
+        req = requested.strip().lower()
+        stored_requested = (state_value(state, "requested") or "").strip().lower()
+        stored_commit = (state_value(state, "commit") or "").strip().lower()
+        if req and req == stored_requested:
+            return True
+        if stored_commit and (
+            stored_commit.startswith(req) or req.startswith(stored_commit)
+        ):
+            return True
+        return False
+
+    def _labgym_is_installed(self) -> bool:
+        return self.pip.list_installed().get("labgym") is not None
+
+    def _checkout_matches_target(
+        self,
+        path: Path,
+        expected_commit: Optional[str],
+        expected_url: str,
+    ) -> bool:
+        if not expected_commit:
+            return False
+        if not (path / ".git").exists():
+            return False
+        if not origin_matches(self.runner, path, expected_url):
+            return False
+        head = current_head(self.runner, path)
+        return head == expected_commit.strip().lower()
+
+    @staticmethod
+    def _paths_equal(left: Optional[str], right: Path) -> bool:
+        if not left:
+            return False
+        return Path(left) == Path(right)
 
     def _prepare(
         self,
@@ -264,6 +395,8 @@ class LauncherBackend:
         commit: Optional[str],
         pypi_version: Optional[str],
         extra_notes: Tuple[str, ...] = (),
+        branch_name: Optional[str] = None,
+        commit_subject: Optional[str] = None,
     ) -> Confirmation:
         current = self.pip.list_installed()
         installed_source = self.pip.labgym_source_line()
@@ -282,7 +415,7 @@ class LauncherBackend:
         notes = list(extra_notes) + [
             "Packages not listed stay as they are in this stage.",
             "LabGym will not be launched if the hash cannot be resolved or install fails.",
-            "Rollback to the latest official LabGym PyPI release remains available.",
+            "Rollback to the latest Official Release remains available.",
         ]
         if needs_install and all(change.action == "unchanged" for change in changes):
             notes.insert(0, "Install is still required to switch the LabGym source.")
@@ -300,6 +433,8 @@ class LauncherBackend:
             changes=changes,
             needs_install=needs_install,
             notes=tuple(notes),
+            branch_name=branch_name,
+            commit_subject=commit_subject,
         )
         LOGGER.info(
             "prepared %s source=%s resolved=%s checkout=%s needs_install=%s",
@@ -351,5 +486,7 @@ class LauncherBackend:
                 "checkout_path": confirmation.checkout_path,
                 "commit": confirmation.commit,
                 "pypi_version": confirmation.pypi_version,
+                "branch_name": confirmation.branch_name,
+                "commit_subject": confirmation.commit_subject,
             },
         )

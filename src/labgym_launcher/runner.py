@@ -42,3 +42,12 @@ class CommandRunner:
             stdout=stdout,
             stderr=stderr,
         )
+
+    def start(
+        self,
+        args: Sequence[str],
+        cwd: Optional[str] = None,
+    ) -> subprocess.Popen:
+        argv = [str(part) for part in args]
+        LOGGER.debug("start %s cwd=%s", argv, cwd)
+        return subprocess.Popen(argv, cwd=cwd)

@@ -8,6 +8,12 @@ from labgym_launcher.confirm import format_confirmation, format_status
 from labgym_launcher.constants import CANONICAL_SOURCE
 from labgym_launcher.errors import LauncherError
 from labgym_launcher.gitops import parse_demo_request
+from labgym_launcher.gui_flow import (
+    ALREADY_ACTIVE,
+    select_official_release,
+    select_rollback,
+    select_selected_commit,
+)
 from labgym_launcher.models import Confirmation
 
 LOGGER = logging.getLogger("labgym_launcher")
@@ -15,19 +21,19 @@ LOGGER = logging.getLogger("labgym_launcher")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="labgym-launcher",
+        prog="labgym-launcher --cli",
         description=(
-            "Launch official LabGym (home) or a demo git commit. "
-            "Demo source is username/repo-name; it defaults to %s. "
+            "Launch the Official Release (home) or a selected git commit (demo). "
+            "Selected-commit source is username/repo-name; it defaults to %s. "
             "A hash may be full or short, but it must resolve uniquely in that repo. "
-            "There is no demo allowlist." % CANONICAL_SOURCE
+            "There is no selected-commit allowlist." % CANONICAL_SOURCE
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("home", help="install and launch the latest official LabGym PyPI release")
+    sub.add_parser("home", help="install and launch the latest Official Release")
     demo = sub.add_parser(
         "demo",
-        help="install and launch LabGym at a user-entered GitHub source and commit hash",
+        help="install and launch LabGym at a user-entered GitHub source and selected commit hash",
     )
     demo.add_argument(
         "source_and_commit",
@@ -42,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="show launcher and LabGym status")
     sub.add_parser(
         "rollback",
-        help="restore the latest official LabGym PyPI release without launching",
+        help="restore the latest Official Release without launching",
     )
     return parser
 
@@ -86,25 +92,46 @@ def run_command(
         stdout.write(format_status(backend.status()) + "\n")
         return 0
     if args.command == "home":
-        confirmation = backend.prepare_home()
-        return _confirm_apply_launch(backend, confirmation, stdin, stdout, launch=True)
+        selection = select_official_release(backend)
+        if selection.outcome == ALREADY_ACTIVE:
+            stdout.write("%s\n" % selection.message)
+            backend.launch()
+            return 0
+        return _confirm_apply_launch(
+            backend, selection.confirmation, stdin, stdout, launch=True
+        )
     if args.command == "demo":
         source, commit = parse_demo_request(args.source_and_commit)
-        confirmation = backend.prepare_demo(commit, source_repo=source)
-        return _confirm_apply_launch(backend, confirmation, stdin, stdout, launch=True)
+        selection = select_selected_commit(backend, commit, source_repo=source)
+        if selection.outcome == ALREADY_ACTIVE:
+            stdout.write("%s\n" % selection.message)
+            backend.launch()
+            return 0
+        return _confirm_apply_launch(
+            backend, selection.confirmation, stdin, stdout, launch=True
+        )
     if args.command == "rollback":
-        confirmation = backend.prepare_rollback()
-        return _confirm_apply_launch(backend, confirmation, stdin, stdout, launch=False)
+        selection = select_rollback(backend)
+        if selection.outcome == ALREADY_ACTIVE:
+            stdout.write("%s LabGym was not launched.\n" % selection.message)
+            return 0
+        return _confirm_apply_launch(
+            backend, selection.confirmation, stdin, stdout, launch=False
+        )
     raise LauncherError("Unknown command %r." % args.command)
 
 
 def _confirm_apply_launch(
     backend: LauncherBackend,
-    confirmation: Confirmation,
+    confirmation: Optional[Confirmation],
     stdin: TextIO,
     stdout: TextIO,
     launch: bool,
 ) -> int:
+    if confirmation is None:
+        raise LauncherError(
+            "Internal error: confirmation missing for a required transition."
+        )
     if confirmation.needs_install:
         if not prompt_approval(confirmation, stdin, stdout):
             stdout.write(

@@ -25,6 +25,8 @@ class Confirmation:
     changes: Tuple[DepChange, ...]
     needs_install: bool
     notes: Tuple[str, ...]
+    branch_name: Optional[str] = None
+    commit_subject: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,30 @@ class LauncherStatus:
     installed_labgym: Optional[str]
     installed_source: Optional[str]
     checkout_path: Optional[str]
+    branch_name: Optional[str]
+    commit_subject: Optional[str]
     home_checkout: str
     demo_checkout: str
     data_dir: str
     rollback_available: bool
+
+
+@dataclass(frozen=True)
+class PreflightResult:
+    skip_transition: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class Selection:
+    outcome: str
+    confirmation: Optional[Confirmation] = None
+    message: str = ""
+    target: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CommitMetadata:
+    commit: str
+    branch_name: Optional[str]
+    subject: Optional[str]

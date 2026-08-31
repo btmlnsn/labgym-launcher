@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from labgym_launcher.constants import (
     CANONICAL_SOURCE,
@@ -16,6 +16,7 @@ from labgym_launcher.errors import (
     MissingHashError,
     UnresolvedHashError,
 )
+from labgym_launcher.models import CommitMetadata
 from labgym_launcher.runner import CommandRunner
 from labgym_launcher.support import require_ok
 
@@ -52,7 +53,7 @@ def validate_hash_format(value: str) -> str:
     spec = normalize_hash_input(value)
     if not spec or not HASH_PATTERN.fullmatch(spec):
         raise InvalidHashError(
-            "Demo target %r is not a git commit hash. "
+            "Selected commit %r is not a git commit hash. "
             "Enter a full hash or a unique short hash (hex only). "
             "Branch names, tags, and other refs are not accepted. "
             "Current environment was not changed." % (value,)
@@ -67,7 +68,7 @@ def parse_demo_request(
     parts = [part.strip() for part in tokens if part.strip()]
     if not parts:
         raise InvalidHashError(
-            "Demo requires a git commit hash. "
+            "A selected commit hash is required. "
             "Usage: demo [username/repo-name] <commit>. "
             "Current environment was not changed."
         )
@@ -85,7 +86,7 @@ def parse_demo_request(
         commit = validate_hash_format(parts[1])
         return source, commit
     raise InvalidSourceError(
-        "Demo accepts [username/repo-name] <commit> only. "
+        "Selected commit accepts [username/repo-name] <commit> only. "
         "Received extra arguments %s. Current environment was not changed."
         % (parts,)
     )
@@ -155,6 +156,139 @@ def resolve_release_tag(
         "(tried %s). Current environment was not changed. git: %s"
         % (version, source_repo, ", ".join(candidates), " | ".join(details))
     )
+
+
+def describe_commit(
+    runner: CommandRunner,
+    repo: Path,
+    revision: str,
+) -> CommitMetadata:
+    """Read commit subject and source-branch provenance from remote-tracking refs.
+
+    Local detached HEAD is an implementation detail and is not used as the
+    branch label. Missing provenance is returned as None.
+    """
+    return CommitMetadata(
+        commit=revision,
+        branch_name=_source_branch_from_remote_refs(runner, repo, revision),
+        subject=_commit_subject(runner, repo, revision),
+    )
+
+
+def _commit_subject(
+    runner: CommandRunner,
+    repo: Path,
+    revision: str,
+) -> Optional[str]:
+    result = runner.run(
+        ["git", "log", "-1", "--format=%s", revision],
+        cwd=str(repo),
+    )
+    if result.returncode != 0:
+        return None
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return lines[0] if lines else None
+
+
+def _source_branch_from_remote_refs(
+    runner: CommandRunner,
+    repo: Path,
+    revision: str,
+) -> Optional[str]:
+    default_branch = _origin_default_branch(runner, repo)
+    for selector in ("--points-at", "--contains"):
+        names = _remote_ref_names(runner, repo, selector, revision)
+        chosen = _choose_source_branch(names, default_branch)
+        if chosen:
+            return chosen
+    return None
+
+
+def _remote_ref_names(
+    runner: CommandRunner,
+    repo: Path,
+    selector: str,
+    revision: str,
+) -> List[str]:
+    result = runner.run(
+        [
+            "git",
+            "for-each-ref",
+            "--format=%(refname:short)",
+            selector,
+            revision,
+            "refs/remotes",
+        ],
+        cwd=str(repo),
+    )
+    if result.returncode != 0:
+        return []
+    names: List[str] = []
+    for line in result.stdout.splitlines():
+        name = line.strip()
+        if not name or name in {"HEAD", "origin/HEAD"}:
+            continue
+        names.append(name)
+    return names
+
+
+def _origin_default_branch(runner: CommandRunner, repo: Path) -> Optional[str]:
+    result = runner.run(
+        ["git", "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
+        cwd=str(repo),
+    )
+    if result.returncode != 0:
+        return None
+    ref = result.stdout.strip()
+    prefix = "refs/remotes/origin/"
+    if ref.startswith(prefix):
+        return ref[len(prefix) :] or None
+    return _display_remote_branch(ref)
+
+
+def _choose_source_branch(
+    names: List[str],
+    default_branch: Optional[str],
+) -> Optional[str]:
+    cleaned = []
+    for name in names:
+        display = _display_remote_branch(name)
+        if display and display not in cleaned:
+            cleaned.append(display)
+    if not cleaned:
+        return None
+    if default_branch and default_branch in cleaned:
+        return default_branch
+    return cleaned[0]
+
+
+def _display_remote_branch(name: str) -> Optional[str]:
+    text = name.strip()
+    if not text or text in {"HEAD", "origin/HEAD"}:
+        return None
+    if text.startswith("origin/"):
+        text = text[len("origin/") :]
+    return text or None
+
+
+def current_head(runner: CommandRunner, repo: Path) -> Optional[str]:
+    git_dir = Path(repo) / ".git"
+    if not git_dir.exists():
+        return None
+    result = runner.run(["git", "rev-parse", "--verify", "HEAD"], cwd=str(repo))
+    if result.returncode != 0:
+        return None
+    full = result.stdout.strip().lower()
+    if not FULL_HASH_PATTERN.fullmatch(full):
+        return None
+    return full
+
+
+def origin_matches(runner: CommandRunner, repo: Path, url: str) -> bool:
+    result = runner.run(["git", "remote", "get-url", "origin"], cwd=str(repo))
+    if result.returncode != 0:
+        return False
+    return _normalize_remote(result.stdout) == _normalize_remote(url)
 
 
 def origin_url(runner: CommandRunner, repo: Path) -> str:
