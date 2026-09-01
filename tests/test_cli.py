@@ -131,6 +131,32 @@ class CliTests(unittest.TestCase):
             )
         )
 
+    def test_repeated_official_release_blocks_live_session(self) -> None:
+        first = io.StringIO()
+        code = main(
+            ["home"],
+            backend=self.backend,
+            stdin=io.StringIO("yes\n"),
+            stdout=first,
+        )
+        self.assertEqual(code, 0)
+        live = self.backend.launch(wait=False)
+        self.assertTrue(live.started)
+        self.launched = False
+        stdout = io.StringIO()
+        code = main(
+            ["home"],
+            backend=self.backend,
+            stdin=io.StringIO(),
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        text = stdout.getvalue()
+        self.assertIn("The Official Release was already active", text)
+        self.assertIn("already running", text)
+        self.assertIn("did not start another Official Release", text)
+        self.assertFalse(self.launched)
+
     def test_repeated_same_commit_skips_install_prompt(self) -> None:
         first = io.StringIO()
         code = main(

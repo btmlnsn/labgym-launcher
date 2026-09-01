@@ -11,6 +11,7 @@ from labgym_launcher.constants import (
 )
 from labgym_launcher.gui_flow import (
     ALREADY_ACTIVE,
+    SESSION_BLOCKED,
     already_active_success_message,
     applied_success_message,
     apply_if_approved,
@@ -29,6 +30,7 @@ from labgym_launcher.recent import (
     replace_recent,
     save_recent,
 )
+from labgym_launcher.sessions import session_class_for_action
 from labgym_launcher.theme import (
     LauncherPalette,
     palette_for_dark_appearance,
@@ -567,17 +569,31 @@ class LauncherFrame:
 
         def work():
             selection = selector()
+            launch_result = None
             if selection.outcome == ALREADY_ACTIVE and launch:
-                self.backend.launch(wait=False)
-            return selection
+                launch_result = self.backend.launch(
+                    wait=False,
+                    session_class=session_class_for_action(selection.target),
+                )
+            return selection, launch_result
 
-        self._run_background(work, lambda selection: self._after_select(selection, launch))
+        self._run_background(
+            work,
+            lambda packed: self._after_select(packed[0], launch, packed[1]),
+        )
 
-    def _after_select(self, selection, launch: bool) -> None:
+    def _after_select(self, selection, launch: bool, launch_result=None) -> None:
+        if selection.outcome == SESSION_BLOCKED:
+            self._set_working(False)
+            self.refresh_status()
+            self._show_info(selection.message)
+            return
         if selection.outcome == ALREADY_ACTIVE:
             self._set_working(False)
             self.refresh_status()
-            if launch:
+            if launch and launch_result is not None and launch_result.blocked:
+                self._show_info(launch_result.message)
+            elif launch:
                 self._show_info(already_active_success_message(selection.target, True))
             else:
                 self._show_info(already_active_success_message(selection.target, False))
@@ -606,6 +622,16 @@ class LauncherFrame:
         self._set_working(False)
         if outcome == "cancelled":
             self.refresh_status()
+            return
+        if outcome == "blocked":
+            self.refresh_status()
+            result = self.backend.last_launch_result
+            message = (
+                result.message
+                if result is not None and result.message
+                else "A LabGym session of this type is already running."
+            )
+            self._show_info(message)
             return
         if confirmation.action == "demo":
             self.recent = record_demo_if_needed(self.recent, confirmation)

@@ -33,6 +33,14 @@ from labgym_launcher.gitops import (
 from labgym_launcher.models import Confirmation, DepChange, LauncherStatus, PreflightResult
 from labgym_launcher.pipops import PipOps
 from labgym_launcher.runner import CommandRunner
+from labgym_launcher.sessions import (
+    OFFICIAL_RELEASE_SESSION,
+    SELECTED_COMMIT_SESSION,
+    LaunchResult,
+    SessionRegistry,
+    process_is_alive,
+    session_class_for_action,
+)
 from labgym_launcher.state import load_state, save_state, state_value
 from labgym_launcher.support import (
     default_data_dir,
@@ -101,6 +109,10 @@ class LauncherBackend:
         self.pip = PipOps(self.runner, self.python)
         self.home_path = home_checkout_path(self.data_dir)
         self.demo_path = demo_checkout_path(self.data_dir)
+        self._live_pids = set()
+        self._next_impl_pid = 100000000
+        self.sessions = SessionRegistry(self.data_dir, is_alive=self._pid_is_alive)
+        self.last_launch_result: Optional[LaunchResult] = None
 
     def log_path(self) -> Path:
         return self.data_dir / LOG_FILENAME
@@ -227,13 +239,27 @@ class LauncherBackend:
             raise InstallFailedError(message) from exc
         self._save_success(confirmation)
 
-    def launch(self, wait: bool = True) -> None:
+    def launch(
+        self,
+        wait: bool = True,
+        session_class: Optional[str] = None,
+    ) -> LaunchResult:
+        resolved_class = session_class or self._session_class_from_state()
+        blocked = self.sessions.block_reason(resolved_class)
+        if blocked:
+            result = LaunchResult(started=False, blocked=True, message=blocked)
+            self.last_launch_result = result
+            LOGGER.info("launch blocked for %s: %s", resolved_class, blocked)
+            return result
         state = load_state(self.data_dir)
-        checkout = state_value(state, "checkout_path")
+        checkout = self._checkout_for_session(resolved_class) or state_value(
+            state, "checkout_path"
+        )
         LOGGER.info(
-            "launching LabGym from checkout %s wait=%s",
+            "launching LabGym from checkout %s wait=%s session=%s",
             checkout or "current environment",
             wait,
+            resolved_class,
         )
         if self.launch_impl is not None:
             code = self.launch_impl()
@@ -244,20 +270,83 @@ class LauncherBackend:
                     "If this followed a successful install, the selected revision remains installed "
                     "and rollback to the Official Release is available." % code
                 )
-            return
+            if not wait and resolved_class:
+                pid = self._next_impl_pid
+                self._next_impl_pid += 1
+                self._live_pids.add(pid)
+                self._register_session(resolved_class, pid, state, checkout)
+            result = LaunchResult.launched()
+            self.last_launch_result = result
+            return result
         args = [self.python, "-m", LABGYM_MODULE]
         if wait:
-            result = self.runner.run(args, cwd=checkout, capture=False)
-            if result.returncode != 0:
+            proc = self.runner.start(args, cwd=checkout)
+            pid = getattr(proc, "pid", None)
+            if resolved_class and pid:
+                self._live_pids.add(int(pid))
+                self._register_session(resolved_class, int(pid), state, checkout)
+            wait_fn = getattr(proc, "wait", None)
+            code = wait_fn() if callable(wait_fn) else 0
+            if resolved_class:
+                if pid:
+                    self._live_pids.discard(int(pid))
+                self.sessions.unregister(resolved_class)
+            if code != 0:
                 raise LaunchRefusedError(
                     "LabGym exited with status %s. "
                     "Unresolved hashes and dependency failures never reach launch. "
                     "If this followed a successful install, the selected revision remains installed "
-                    "and rollback to the Official Release is available." % result.returncode
+                    "and rollback to the Official Release is available." % code
                 )
-            return
+            result = LaunchResult.launched()
+            self.last_launch_result = result
+            return result
         LOGGER.info("starting LabGym without waiting for the process to exit")
-        self.runner.start(args, cwd=checkout)
+        proc = self.runner.start(args, cwd=checkout)
+        pid = getattr(proc, "pid", None)
+        if resolved_class and pid:
+            self._live_pids.add(int(pid))
+            self._register_session(resolved_class, int(pid), state, checkout)
+        result = LaunchResult.launched()
+        self.last_launch_result = result
+        return result
+
+    def end_session(self, session_class: str) -> None:
+        record = self.sessions.active(session_class)
+        if record is not None:
+            self._live_pids.discard(record.pid)
+        self.sessions.unregister(session_class)
+
+    def _pid_is_alive(self, pid: int) -> bool:
+        if pid in self._live_pids:
+            return True
+        return process_is_alive(pid)
+
+    def _session_class_from_state(self) -> Optional[str]:
+        state = load_state(self.data_dir)
+        return session_class_for_action(state_value(state, "mode"))
+
+    def _checkout_for_session(self, session_class: Optional[str]) -> Optional[str]:
+        if session_class == OFFICIAL_RELEASE_SESSION:
+            return str(self.home_path)
+        if session_class == SELECTED_COMMIT_SESSION:
+            return str(self.demo_path)
+        return None
+
+    def _register_session(
+        self,
+        session_class: str,
+        pid: int,
+        state: Dict[str, Any],
+        checkout: Optional[str],
+    ) -> None:
+        self.sessions.register(
+            session_class,
+            pid,
+            source_repo=state_value(state, "source_repo"),
+            commit=state_value(state, "commit"),
+            checkout_path=checkout,
+        )
 
     def status(self) -> LauncherStatus:
         state = load_state(self.data_dir)
@@ -280,6 +369,10 @@ class LauncherBackend:
             demo_checkout=str(self.demo_path),
             data_dir=str(self.data_dir),
             rollback_available=True,
+            official_session_active=self.sessions.has_active(OFFICIAL_RELEASE_SESSION),
+            selected_commit_session_active=self.sessions.has_active(
+                SELECTED_COMMIT_SESSION
+            ),
         )
 
     def preflight_official_release(self) -> PreflightResult:

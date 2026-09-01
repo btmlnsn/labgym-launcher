@@ -10,9 +10,11 @@ from labgym_launcher.constants import DEMO, HOME, ROLLBACK
 from labgym_launcher.errors import LauncherError
 from labgym_launcher.models import Confirmation, Selection
 from labgym_launcher.recent import record_recent
+from labgym_launcher.sessions import session_class_for_action
 
 ALREADY_ACTIVE = "already_active"
 NEEDS_CONFIRM = "needs_confirm"
+SESSION_BLOCKED = "session_blocked"
 
 OFFICIAL_RELEASE_ALREADY_ACTIVE_SUCCESS = (
     "Official Release started.\n"
@@ -54,7 +56,15 @@ def prepare_rollback(backend: LauncherBackend) -> Confirmation:
 
 
 def select_official_release(backend: LauncherBackend) -> Selection:
+    session_class = session_class_for_action(HOME)
+    blocked = backend.sessions.block_reason(session_class)
     preflight = backend.preflight_official_release()
+    if blocked and not preflight.skip_transition:
+        return Selection(
+            outcome=SESSION_BLOCKED,
+            message=blocked,
+            target=HOME,
+        )
     if preflight.skip_transition:
         return Selection(
             outcome=ALREADY_ACTIVE,
@@ -73,7 +83,15 @@ def select_selected_commit(
     commit: str,
     source_repo: Optional[str] = None,
 ) -> Selection:
+    session_class = session_class_for_action(DEMO)
+    blocked = backend.sessions.block_reason(session_class)
     preflight = backend.preflight_selected_commit(commit, source_repo=source_repo)
+    if blocked and not preflight.skip_transition:
+        return Selection(
+            outcome=SESSION_BLOCKED,
+            message=blocked,
+            target=DEMO,
+        )
     if preflight.skip_transition:
         return Selection(
             outcome=ALREADY_ACTIVE,
@@ -136,7 +154,10 @@ def apply_if_approved(
         return "cancelled"
     backend.apply(confirmation, approved=True)
     if launch:
-        backend.launch(wait=False)
+        session_class = session_class_for_action(confirmation.action)
+        result = backend.launch(wait=False, session_class=session_class)
+        if result.blocked:
+            return "blocked"
     return "applied"
 
 

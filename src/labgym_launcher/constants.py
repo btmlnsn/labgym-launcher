@@ -10,6 +10,7 @@ WORKTREES_DIRNAME = "worktrees"
 HOME_WORKTREE = "home"
 DEMO_WORKTREE = "demo"
 STATE_FILENAME = "state.json"
+SESSIONS_FILENAME = "sessions.json"
 LOG_FILENAME = "launcher.log"
 FREEZE_FILENAME = "pre_install_freeze.txt"
 STATE_VERSION = 1

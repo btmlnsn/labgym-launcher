@@ -34,6 +34,8 @@ class FakeRunner(CommandRunner):
         self.restore_code = 0
         self.launch_code = 0
         self.started: List[tuple] = []
+        self.started_procs: List["FakeProcess"] = []
+        self._next_pid = 1000
         self.heads: Dict[str, str] = {}
         self.subjects: Dict[str, str] = {DEMO_SHA: "Add selected-commit UI"}
         self.branches: Dict[str, str] = {DEMO_SHA: "demo-branch"}
@@ -60,7 +62,10 @@ class FakeRunner(CommandRunner):
         argv = tuple(str(part) for part in args)
         self.started.append(argv)
         self.cwds.append(cwd)
-        return argv
+        self._next_pid += 1
+        proc = FakeProcess(argv, self._next_pid, self.launch_code)
+        self.started_procs.append(proc)
+        return proc
 
     def install_calls(self) -> List[tuple]:
         return [
@@ -167,6 +172,16 @@ class FakeRunner(CommandRunner):
         return CommandResult(
             argv, self.install_code, "", "install failed" if self.install_code else ""
         )
+
+
+class FakeProcess:
+    def __init__(self, argv: tuple, pid: int, returncode: int = 0) -> None:
+        self.argv = argv
+        self.pid = pid
+        self.returncode = returncode
+
+    def wait(self) -> int:
+        return self.returncode
 
 
 def _path_key(path) -> str:

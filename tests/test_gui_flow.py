@@ -126,7 +126,10 @@ class GuiFlowTests(unittest.TestCase):
         self.assertIn("LabGym started successfully", copy)
         self.assertNotIn("still usable", copy)
         self.backend.launch(wait=False)
-        self.assertEqual(self.launched, 2)
+        self.assertEqual(self.launched, 1)
+        blocked = self.backend.launch(wait=False)
+        self.assertTrue(blocked.blocked)
+        self.assertEqual(self.launched, 1)
 
     def test_repeated_same_commit_skips_transition(self) -> None:
         confirmation = prepare_demo(self.backend, "abc1def")
@@ -139,7 +142,10 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(_transition_ops(self.runner), [])
         self.assertFalse(_metadata_ops(self.runner))
         self.backend.launch(wait=False)
-        self.assertEqual(self.launched, 2)
+        self.assertEqual(self.launched, 1)
+        blocked = self.backend.launch(wait=False)
+        self.assertTrue(blocked.blocked)
+        self.assertEqual(self.launched, 1)
 
     def test_real_target_change_still_confirms(self) -> None:
         confirmation = prepare_home(self.backend)

@@ -5,15 +5,17 @@ from typing import List, Optional, TextIO
 
 from labgym_launcher.backend import LauncherBackend
 from labgym_launcher.confirm import format_confirmation, format_status
-from labgym_launcher.constants import CANONICAL_SOURCE
+from labgym_launcher.constants import CANONICAL_SOURCE, DEMO, HOME
 from labgym_launcher.errors import LauncherError
 from labgym_launcher.gitops import parse_demo_request
 from labgym_launcher.gui_flow import (
     ALREADY_ACTIVE,
+    SESSION_BLOCKED,
     select_official_release,
     select_rollback,
     select_selected_commit,
 )
+from labgym_launcher.sessions import session_class_for_action
 from labgym_launcher.models import Confirmation
 
 LOGGER = logging.getLogger("labgym_launcher")
@@ -93,9 +95,14 @@ def run_command(
         return 0
     if args.command == "home":
         selection = select_official_release(backend)
+        if selection.outcome == SESSION_BLOCKED:
+            stdout.write("%s\n" % selection.message)
+            return 0
         if selection.outcome == ALREADY_ACTIVE:
             stdout.write("%s\n" % selection.message)
-            backend.launch()
+            result = backend.launch(session_class=session_class_for_action(HOME))
+            if result.blocked:
+                stdout.write("%s\n" % result.message)
             return 0
         return _confirm_apply_launch(
             backend, selection.confirmation, stdin, stdout, launch=True
@@ -103,9 +110,14 @@ def run_command(
     if args.command == "demo":
         source, commit = parse_demo_request(args.source_and_commit)
         selection = select_selected_commit(backend, commit, source_repo=source)
+        if selection.outcome == SESSION_BLOCKED:
+            stdout.write("%s\n" % selection.message)
+            return 0
         if selection.outcome == ALREADY_ACTIVE:
             stdout.write("%s\n" % selection.message)
-            backend.launch()
+            result = backend.launch(session_class=session_class_for_action(DEMO))
+            if result.blocked:
+                stdout.write("%s\n" % result.message)
             return 0
         return _confirm_apply_launch(
             backend, selection.confirmation, stdin, stdout, launch=True
@@ -145,7 +157,9 @@ def _confirm_apply_launch(
         stdout.write("No dependency installation is required.\n")
         backend.apply(confirmation, approved=True)
     if launch:
-        backend.launch()
+        result = backend.launch(session_class=session_class_for_action(confirmation.action))
+        if result.blocked:
+            stdout.write("%s\n" % result.message)
     else:
         stdout.write("Rollback complete. LabGym was not launched.\n")
     return 0

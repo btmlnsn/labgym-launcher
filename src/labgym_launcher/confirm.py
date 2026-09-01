@@ -143,6 +143,14 @@ def format_status(status: LauncherStatus) -> str:
             "Data dir: %s" % status.data_dir,
             "Rollback to Official Release: %s"
             % ("available" if status.rollback_available else "unavailable"),
+            "Official Release session: %s"
+            % ("running" if status.official_session_active else "not running"),
+            "Selected Commit session: %s"
+            % (
+                "running"
+                if status.selected_commit_session_active
+                else "not running"
+            ),
         ]
     )
     return "\n".join(lines)

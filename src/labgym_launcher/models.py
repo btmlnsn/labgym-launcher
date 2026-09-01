@@ -47,6 +47,8 @@ class LauncherStatus:
     demo_checkout: str
     data_dir: str
     rollback_available: bool
+    official_session_active: bool = False
+    selected_commit_session_active: bool = False
 
 
 @dataclass(frozen=True)
