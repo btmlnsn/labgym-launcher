@@ -269,5 +269,169 @@ class LauncherFrameWxTests(unittest.TestCase):
             temp.cleanup()
 
 
+    def test_recent_list_shows_alias_before_provenance(self) -> None:
+        try:
+            import wx
+        except ImportError:
+            self.skipTest("wxPython is not installed")
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from labgym_launcher.backend import LauncherBackend
+        from labgym_launcher.gui import LauncherFrame
+        from labgym_launcher.recent import RecentDemo, load_recent, save_recent
+        from fakes import DEMO_SHA, FakeRunner
+
+        temp = TemporaryDirectory()
+        app = wx.App(False)
+        try:
+            backend = LauncherBackend(
+                data_dir=Path(temp.name),
+                runner=FakeRunner(),
+                python="python",
+                fetch_pypi_version=lambda: "3.0.1",
+            )
+            frame = LauncherFrame(backend=backend)
+            try:
+                frame.recent = [
+                    RecentDemo(
+                        "alice/LabGym",
+                        DEMO_SHA,
+                        subject="Add selected-commit UI",
+                        alias="Courtship demo",
+                    ),
+                    RecentDemo("bob/LabGym", "bbbbbbb", subject="No alias here"),
+                ]
+                frame.refresh_recent_list()
+                self.assertEqual(frame.recent_list.GetCount(), 2)
+                aliased = frame.recent_list.GetString(0)
+                self.assertIn("<b>Courtship demo</b>", aliased)
+                self.assertIn("alice/LabGym", aliased)
+                self.assertIn(DEMO_SHA[:7], aliased)
+                self.assertIn("Add selected-commit UI", aliased)
+                self.assertEqual(aliased.count("<br>"), 2)
+                plain = frame.recent_list.GetString(1)
+                self.assertIn("bob/LabGym", plain)
+                self.assertNotIn("Courtship demo", plain)
+                self.assertEqual(plain.count("<br>"), 1)
+
+                frame.on_load_recent(None)
+                self.assertEqual(frame.source_ctrl.GetValue(), "alice/LabGym")
+                self.assertEqual(frame.commit_ctrl.GetValue(), DEMO_SHA)
+
+                save_recent(backend.data_dir, frame.recent)
+                reloaded = load_recent(backend.data_dir)
+                self.assertEqual(reloaded[0].alias, "Courtship demo")
+                self.assertIsNone(reloaded[1].alias)
+            finally:
+                frame._frame.Destroy()
+        finally:
+            app.Destroy()
+            temp.cleanup()
+
+
+class AliasDialogWxTests(unittest.TestCase):
+    def test_dialog_shows_readonly_provenance_and_editable_alias(self) -> None:
+        try:
+            import wx
+        except ImportError:
+            self.skipTest("wxPython is not installed")
+        from labgym_launcher.gui import DemoEditDialog
+        from fakes import DEMO_SHA
+
+        app = wx.App(False)
+        try:
+            frame = wx.Frame(None)
+            dialog = DemoEditDialog(
+                frame,
+                "alice/LabGym",
+                DEMO_SHA,
+                "Courtship demo",
+            )
+            try:
+                self.assertEqual(dialog._dialog.GetTitle(), "Edit alias")
+                self.assertEqual(dialog.source_ctrl.GetValue(), "alice/LabGym")
+                self.assertEqual(dialog.commit_ctrl.GetValue(), DEMO_SHA)
+                self.assertFalse(dialog.source_ctrl.IsEditable())
+                self.assertFalse(dialog.commit_ctrl.IsEditable())
+                self.assertTrue(dialog.alias_ctrl.IsEditable())
+                self.assertEqual(dialog.alias_value(), "Courtship demo")
+                dialog.alias_ctrl.SetValue("Courtship v2")
+                self.assertEqual(dialog.values(), "Courtship v2")
+                self.assertIn("does not change", dialog.alias_hint.GetLabel())
+            finally:
+                dialog.Destroy()
+                frame.Destroy()
+        finally:
+            app.Destroy()
+
+    def test_edit_action_updates_and_clears_alias_without_changing_identity(self) -> None:
+        try:
+            import wx
+        except ImportError:
+            self.skipTest("wxPython is not installed")
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from labgym_launcher import gui as gui_mod
+        from labgym_launcher.backend import LauncherBackend
+        from labgym_launcher.gui import LauncherFrame
+        from labgym_launcher.recent import RecentDemo, load_recent
+        from fakes import DEMO_SHA, FakeRunner
+
+        class _ScriptedDialog(gui_mod.DemoEditDialog):
+            next_alias = "Courtship demo"
+
+            def ShowModal(self) -> int:
+                self.alias_ctrl.SetValue(self.next_alias)
+                return wx.ID_OK
+
+        temp = TemporaryDirectory()
+        app = wx.App(False)
+        try:
+            backend = LauncherBackend(
+                data_dir=Path(temp.name),
+                runner=FakeRunner(),
+                python="python",
+                fetch_pypi_version=lambda: "3.0.1",
+            )
+            frame = LauncherFrame(backend=backend)
+            try:
+                frame.recent = [
+                    RecentDemo("alice/LabGym", DEMO_SHA, subject="Add selected-commit UI")
+                ]
+                frame.refresh_recent_list()
+
+                with patch.object(gui_mod, "DemoEditDialog", _ScriptedDialog):
+                    frame.on_edit_recent(None)
+                self.assertEqual(frame.recent[0].alias, "Courtship demo")
+                self.assertEqual(frame.recent[0].source_repo, "alice/LabGym")
+                self.assertEqual(frame.recent[0].commit, DEMO_SHA)
+                html = frame.recent_list.GetString(0)
+                self.assertIn("<b>Courtship demo</b>", html)
+                self.assertIn("alice/LabGym", html)
+                self.assertIn(DEMO_SHA[:7], html)
+
+                _ScriptedDialog.next_alias = ""
+                with patch.object(gui_mod, "DemoEditDialog", _ScriptedDialog):
+                    frame.on_edit_recent(None)
+                self.assertIsNone(frame.recent[0].alias)
+                html = frame.recent_list.GetString(0)
+                self.assertNotIn("Courtship demo", html)
+                self.assertIn("alice/LabGym", html)
+                self.assertEqual(html.count("<br>"), 1)
+
+                saved = load_recent(backend.data_dir)
+                self.assertEqual(len(saved), 1)
+                self.assertIsNone(saved[0].alias)
+                self.assertEqual(saved[0].commit, DEMO_SHA)
+            finally:
+                frame._frame.Destroy()
+        finally:
+            app.Destroy()
+            temp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

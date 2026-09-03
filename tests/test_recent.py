@@ -7,10 +7,12 @@ from labgym_launcher.recent import (
     RecentDemo,
     dedupe_recent,
     load_recent,
+    normalize_alias,
     record_recent,
     remove_recent,
     replace_recent,
     save_recent,
+    set_recent_alias,
 )
 
 
@@ -111,6 +113,129 @@ class RecentDemoTests(unittest.TestCase):
         self.assertEqual(label.splitlines()[1], subject)
         self.assertNotIn("...", label)
         self.assertNotIn("...", item.html_label())
+
+    def test_blank_alias_is_treated_as_absent(self) -> None:
+        self.assertIsNone(normalize_alias(None))
+        self.assertIsNone(normalize_alias(""))
+        self.assertIsNone(normalize_alias("   "))
+        self.assertEqual(normalize_alias("  Courtship  demo  "), "Courtship demo")
+
+    def test_alias_create_edit_and_clear(self) -> None:
+        recent = [
+            RecentDemo("alice/LabGym", "abc1", subject="Add selected-commit UI"),
+            RecentDemo("umyelab/LabGym", "def2"),
+        ]
+        recent = set_recent_alias(recent, 0, "  Courtship demo  ")
+        self.assertEqual(recent[0].alias, "Courtship demo")
+        self.assertEqual(recent[0].source_repo, "alice/LabGym")
+        self.assertEqual(recent[0].commit, "abc1")
+        self.assertEqual(recent[0].subject, "Add selected-commit UI")
+        recent = set_recent_alias(recent, 0, "Courtship v2")
+        self.assertEqual(recent[0].alias, "Courtship v2")
+        recent = set_recent_alias(recent, 0, "   ")
+        self.assertIsNone(recent[0].alias)
+        self.assertEqual(recent[1].alias, None)
+
+    def test_aliases_need_not_be_unique(self) -> None:
+        items = [
+            RecentDemo("alice/LabGym", "abc1", alias="same label"),
+            RecentDemo("bob/LabGym", "def2", alias="same label"),
+        ]
+        self.assertEqual(dedupe_recent(items), items)
+
+    def test_alias_does_not_change_duplicate_identity(self) -> None:
+        items = [
+            RecentDemo("alice/LabGym", "abc1", alias="first"),
+            RecentDemo("alice/LabGym", "abc1", alias="second"),
+        ]
+        self.assertEqual(
+            dedupe_recent(items),
+            [RecentDemo("alice/LabGym", "abc1", alias="first")],
+        )
+
+    def test_record_recent_preserves_alias_for_same_entry(self) -> None:
+        recent = [
+            RecentDemo(
+                "alice/LabGym",
+                "abc1",
+                subject="old subject",
+                alias="Courtship demo",
+            )
+        ]
+        updated = record_recent(
+            recent,
+            "alice/LabGym",
+            "abc1",
+            subject="Add selected-commit UI",
+        )
+        self.assertEqual(updated[0].alias, "Courtship demo")
+        self.assertEqual(updated[0].subject, "Add selected-commit UI")
+        self.assertEqual(updated[0].source_repo, "alice/LabGym")
+        self.assertEqual(updated[0].commit, "abc1")
+
+    def test_alias_persists_across_save_and_load(self) -> None:
+        recent = [
+            RecentDemo("alice/LabGym", "abc1", alias="Courtship demo"),
+            RecentDemo("umyelab/LabGym", "def2"),
+        ]
+        save_recent(self.data_dir, recent)
+        loaded = load_recent(self.data_dir)
+        self.assertEqual(loaded[0].alias, "Courtship demo")
+        self.assertIsNone(loaded[1].alias)
+        payload = json.loads((self.data_dir / "recent_demos.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload[0]["alias"], "Courtship demo")
+        self.assertNotIn("alias", payload[1])
+
+    def test_load_legacy_payload_without_alias_is_empty_alias(self) -> None:
+        path = self.data_dir / "recent_demos.json"
+        path.write_text(
+            json.dumps(
+                [{"commit": "abc1", "source_repo": "alice/LabGym", "subject": "Hello"}],
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        loaded = load_recent(self.data_dir)
+        self.assertEqual(len(loaded), 1)
+        self.assertIsNone(loaded[0].alias)
+        self.assertEqual(loaded[0].subject, "Hello")
+
+    def test_label_shows_alias_before_provenance(self) -> None:
+        item = RecentDemo(
+            "alice/LabGym",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            branch_name="demo-branch",
+            subject="Add selected-commit UI",
+            alias="Courtship demo",
+        )
+        lines = item.label().splitlines()
+        self.assertEqual(lines[0], "Courtship demo")
+        self.assertEqual(lines[1], "alice/LabGym @ aaaaaaa")
+        self.assertEqual(lines[2], "Add selected-commit UI")
+        html = item.html_label()
+        self.assertIn("<b>Courtship demo</b>", html)
+        self.assertIn("alice/LabGym @ aaaaaaa", html)
+        self.assertIn("Add selected-commit UI", html)
+        self.assertEqual(html.count("<br>"), 2)
+        self.assertNotIn("demo-branch", html)
+
+    def test_label_without_alias_keeps_current_display(self) -> None:
+        item = RecentDemo(
+            "alice/LabGym",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            subject="Add selected-commit UI",
+        )
+        self.assertEqual(
+            item.label().splitlines(),
+            ["alice/LabGym @ aaaaaaa", "Add selected-commit UI"],
+        )
+
+    def test_html_label_escapes_alias_text(self) -> None:
+        item = RecentDemo("alice/LabGym", "abc1", alias="<b>unsafe</b>")
+        html = item.html_label()
+        self.assertIn("&lt;b&gt;unsafe&lt;/b&gt;", html)
+        self.assertNotIn("<b>unsafe</b>", html)
 
 
 if __name__ == "__main__":

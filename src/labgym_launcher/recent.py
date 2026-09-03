@@ -1,13 +1,28 @@
 import json
 import logging
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from labgym_launcher.confirm import format_selected_commit_html, format_selected_commit_label
+from labgym_launcher.confirm import format_selected_commit_label
 
 LOGGER = logging.getLogger("labgym_launcher")
 RECENT_FILENAME = "recent_demos.json"
+
+
+def normalize_alias(alias: Optional[str]) -> Optional[str]:
+    text = " ".join((alias or "").split())
+    return text or None
+
+
+def _html_from_label(text: str) -> str:
+    lines = text.splitlines()
+    if not lines:
+        return ""
+    headed = ["<b>%s</b>" % escape(lines[0])]
+    headed.extend(escape(line) for line in lines[1:])
+    return "<div>%s</div>" % "<br>".join(headed)
 
 
 @dataclass(frozen=True)
@@ -16,22 +31,22 @@ class RecentDemo:
     commit: str
     branch_name: Optional[str] = None
     subject: Optional[str] = None
+    alias: Optional[str] = None
 
     def label(self) -> str:
-        return format_selected_commit_label(
+        provenance = format_selected_commit_label(
             self.source_repo,
             self.commit,
             self.branch_name,
             self.subject,
         )
+        alias_text = normalize_alias(self.alias)
+        if not alias_text:
+            return provenance
+        return "\n".join([alias_text] + provenance.splitlines())
 
     def html_label(self) -> str:
-        return format_selected_commit_html(
-            self.source_repo,
-            self.commit,
-            self.branch_name,
-            self.subject,
-        )
+        return _html_from_label(self.label())
 
 
 def recent_path(data_dir: Path) -> Path:
@@ -57,6 +72,7 @@ def load_recent(data_dir: Path) -> List[RecentDemo]:
         commit = str(item.get("commit", "")).strip()
         branch_name = str(item.get("branch") or item.get("branch_name") or "").strip() or None
         subject = str(item.get("subject") or "").strip() or None
+        alias = normalize_alias(str(item.get("alias") or ""))
         if source and commit:
             recent.append(
                 RecentDemo(
@@ -64,6 +80,7 @@ def load_recent(data_dir: Path) -> List[RecentDemo]:
                     commit,
                     branch_name=branch_name,
                     subject=subject,
+                    alias=alias,
                 )
             )
     return dedupe_recent(recent)
@@ -78,6 +95,8 @@ def save_recent(data_dir: Path, recent: Sequence[RecentDemo]) -> None:
             entry["branch"] = item.branch_name
         if item.subject:
             entry["subject"] = item.subject
+        if item.alias:
+            entry["alias"] = item.alias
         payload.append(entry)
     recent_path(data_dir).write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -102,14 +121,22 @@ def record_recent(
     commit: Optional[str],
     branch_name: Optional[str] = None,
     subject: Optional[str] = None,
+    alias: Optional[str] = None,
 ) -> List[RecentDemo]:
     if not source_repo or not commit:
         return list(recent)
+    preserved_alias = normalize_alias(alias)
+    if preserved_alias is None:
+        for entry in recent:
+            if (entry.source_repo, entry.commit) == (source_repo, commit):
+                preserved_alias = entry.alias
+                break
     item = RecentDemo(
         source_repo=source_repo,
         commit=commit,
         branch_name=branch_name,
         subject=subject,
+        alias=preserved_alias,
     )
     updated = [
         entry
@@ -127,8 +154,26 @@ def replace_recent(
     commit: str,
 ) -> List[RecentDemo]:
     updated = list(recent)
-    updated[index] = RecentDemo(source_repo, commit)
+    old = updated[index]
+    updated[index] = RecentDemo(source_repo, commit, alias=old.alias)
     return dedupe_recent(updated)
+
+
+def set_recent_alias(
+    recent: Sequence[RecentDemo],
+    index: int,
+    alias: Optional[str],
+) -> List[RecentDemo]:
+    updated = list(recent)
+    item = updated[index]
+    updated[index] = RecentDemo(
+        source_repo=item.source_repo,
+        commit=item.commit,
+        branch_name=item.branch_name,
+        subject=item.subject,
+        alias=normalize_alias(alias),
+    )
+    return updated
 
 
 def remove_recent(recent: Sequence[RecentDemo], index: int) -> List[RecentDemo]:

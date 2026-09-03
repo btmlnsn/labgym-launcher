@@ -27,8 +27,8 @@ from labgym_launcher.recent import (
     RecentDemo,
     load_recent,
     remove_recent,
-    replace_recent,
     save_recent,
+    set_recent_alias,
 )
 from labgym_launcher.sessions import session_class_for_action
 from labgym_launcher.theme import (
@@ -290,31 +290,64 @@ class ConfirmationDialog:
 
 
 class DemoEditDialog:
-    def __init__(self, parent, source_repo: str, commit: str) -> None:
+    def __init__(
+        self,
+        parent,
+        source_repo: str,
+        commit: str,
+        alias: str = "",
+    ) -> None:
         wxmod = _wx()
         self._dialog = wxmod.Dialog(
             parent,
-            title="Edit remembered selected commit",
+            title="Edit alias",
             style=wxmod.DEFAULT_DIALOG_STYLE | wxmod.RESIZE_BORDER,
         )
         root = wxmod.BoxSizer(wxmod.VERTICAL)
-        form = wxmod.FlexGridSizer(2, 2, 8, 8)
+        form = wxmod.FlexGridSizer(3, 2, 8, 8)
         form.AddGrowableCol(1, 1)
         form.Add(
             wxmod.StaticText(self._dialog, label="Source repo"),
             0,
             wxmod.ALIGN_CENTER_VERTICAL,
         )
-        self.source_ctrl = wxmod.TextCtrl(self._dialog, value=source_repo)
+        self.source_ctrl = wxmod.TextCtrl(
+            self._dialog,
+            value=source_repo,
+            style=wxmod.TE_READONLY,
+        )
         form.Add(self.source_ctrl, 1, wxmod.EXPAND)
         form.Add(
             wxmod.StaticText(self._dialog, label="Commit hash"),
             0,
             wxmod.ALIGN_CENTER_VERTICAL,
         )
-        self.commit_ctrl = wxmod.TextCtrl(self._dialog, value=commit)
+        self.commit_ctrl = wxmod.TextCtrl(
+            self._dialog,
+            value=commit,
+            style=wxmod.TE_READONLY,
+        )
         form.Add(self.commit_ctrl, 1, wxmod.EXPAND)
+        form.Add(
+            wxmod.StaticText(self._dialog, label="Alias"),
+            0,
+            wxmod.ALIGN_CENTER_VERTICAL,
+        )
+        self.alias_ctrl = wxmod.TextCtrl(self._dialog, value=alias)
+        form.Add(self.alias_ctrl, 1, wxmod.EXPAND)
         root.Add(form, 0, wxmod.ALL | wxmod.EXPAND, 10)
+        hint = wxmod.StaticText(
+            self._dialog,
+            label=(
+                "Optional label for this remembered entry. "
+                "It does not change the source repo or commit that will be launched. "
+                "Clear the field to remove the alias."
+            ),
+        )
+        hint.SetName(SECONDARY_WIDGET_NAME)
+        hint.Wrap(520)
+        self.alias_hint = hint
+        root.Add(hint, 0, wxmod.LEFT | wxmod.RIGHT | wxmod.BOTTOM | wxmod.EXPAND, 10)
         root.Add(_ok_cancel_sizer(wxmod, self._dialog), 0, wxmod.ALL | wxmod.ALIGN_RIGHT, 10)
         self._dialog.SetSizerAndFit(root)
         apply_theme(self._dialog, resolve_launcher_palette())
@@ -330,7 +363,10 @@ class DemoEditDialog:
         self._dialog.Destroy()
 
     def values(self):
-        return self.source_ctrl.GetValue().strip(), self.commit_ctrl.GetValue().strip()
+        return self.alias_ctrl.GetValue()
+
+    def alias_value(self) -> str:
+        return self.alias_ctrl.GetValue()
 
 
 class StatusDetailsDialog:
@@ -691,18 +727,20 @@ class LauncherFrame:
         item = self._selected_recent()
         if item is None:
             return
-        dialog = DemoEditDialog(self._frame, item.source_repo, item.commit)
+        dialog = DemoEditDialog(
+            self._frame,
+            item.source_repo,
+            item.commit,
+            item.alias or "",
+        )
         try:
             result = dialog.ShowModal()
             if result != wxmod.ID_OK:
                 return
-            source_repo, commit = dialog.values()
+            alias = dialog.alias_value()
         finally:
             dialog.Destroy()
-        if not source_repo or not commit:
-            self._show_error("Source repo and commit are both required for a remembered selected commit.")
-            return
-        self.recent = replace_recent(self.recent, index, source_repo, commit)
+        self.recent = set_recent_alias(self.recent, index, alias)
         save_recent(self.backend.data_dir, self.recent)
         self.refresh_recent_list()
 

@@ -18,6 +18,7 @@ from labgym_launcher.gui_flow import (
     select_selected_commit,
 )
 from labgym_launcher.constants import HOME
+from labgym_launcher.recent import set_recent_alias
 from fakes import DEMO_SHA, FakeRunner
 
 
@@ -108,6 +109,19 @@ class GuiFlowTests(unittest.TestCase):
         self.assertNotIn("Branch:", label)
         self.assertIn("<br>", recent[0].html_label())
         self.assertEqual(recent[0].html_label().count("<br>"), 1)
+        self.assertIsNone(recent[0].alias)
+
+    def test_rerecording_selected_commit_preserves_alias(self) -> None:
+        confirmation = prepare_demo(self.backend, "abc1def")
+        apply_if_approved(self.backend, confirmation, approved=True, launch=True)
+        recent = record_demo_if_needed([], confirmation)
+        recent = set_recent_alias(recent, 0, "Courtship demo")
+        confirmation_again = prepare_demo(self.backend, "abc1def")
+        recent = record_demo_if_needed(recent, confirmation_again)
+        self.assertEqual(len(recent), 1)
+        self.assertEqual(recent[0].alias, "Courtship demo")
+        self.assertEqual(recent[0].commit, DEMO_SHA)
+        self.assertEqual(recent[0].source_repo, "umyelab/LabGym")
 
     def test_repeated_official_release_skips_transition(self) -> None:
         confirmation = prepare_home(self.backend)
