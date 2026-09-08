@@ -30,3 +30,6 @@ labgym-launcher-cli = "labgym_launcher.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+labgym_launcher = ["assets/icons/*.png", "assets/icons/*.ico", "assets/icons/*.icns"]

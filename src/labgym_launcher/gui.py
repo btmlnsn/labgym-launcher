@@ -2,6 +2,11 @@ import sys
 import threading
 from typing import Callable, List, Optional
 
+from labgym_launcher.app_icon import (
+    APP_NAME,
+    set_frame_icon,
+    setup_application_icons,
+)
 from labgym_launcher.backend import LauncherBackend
 from labgym_launcher.confirm import format_status
 from labgym_launcher.constants import (
@@ -418,10 +423,11 @@ class LauncherFrame:
         self.recent: List[RecentDemo] = load_recent(self.backend.data_dir)
         self._working = False
         self._status_details = ""
-        self._frame = wxmod.Frame(None, title="LabGym Launcher")
+        self._frame = wxmod.Frame(None, title=APP_NAME)
         self._frame.SetSize(FRAME_START_SIZE)
         self._frame.SetMinSize(FRAME_MIN_SIZE)
         self._frame.Centre()
+        set_frame_icon(self._frame)
         panel = wxmod.Panel(self._frame, name=WINDOW_PANEL_NAME)
         self.window_panel = panel
         outer = wxmod.BoxSizer(wxmod.VERTICAL)
@@ -758,6 +764,8 @@ class LauncherApp:
     def __init__(self) -> None:
         wxmod = _wx()
         self._app = wxmod.App(False)
+        self._app.SetAppName(APP_NAME)
+        setup_application_icons()
 
     def OnInit(self) -> bool:
         frame = LauncherFrame()
@@ -775,6 +783,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         sys.stderr.write(str(exc) + "\n")
         return 1
     app = _wx().App(False)
+    app.SetAppName(APP_NAME)
+    setup_application_icons()
     frame = LauncherFrame()
     frame.Show()
     return int(app.MainLoop() or 0)
