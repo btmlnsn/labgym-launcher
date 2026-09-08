@@ -78,7 +78,16 @@ class ConfirmationDialogWxTests(unittest.TestCase):
                 dialog._dialog.Layout()
                 self.assertTrue(dialog.details_ctrl.GetValue().startswith("LabGym Launcher confirmation"))
                 for name, parent in parents.items():
-                    self.assertIs(parent, window, msg="%s parent is not the dialog" % name)
+                    self.assertIsNotNone(parent, msg="%s has no parent" % name)
+                    self.assertEqual(
+                        parent.GetClassName(),
+                        "wxDialog",
+                        msg="%s parent class is %s" % (name, parent.GetClassName()),
+                    )
+                    self.assertTrue(
+                        parent.IsSameAs(window),
+                        msg="%s parent is not the dialog" % name,
+                    )
             finally:
                 dialog.Destroy()
                 frame.Destroy()
@@ -125,6 +134,7 @@ class LauncherFrameWxTests(unittest.TestCase):
                 self.assertEqual(frame.window_panel.GetName(), WINDOW_PANEL_NAME)
                 self.assertEqual(frame.details_btn.GetLabel(), "Details")
                 self.assertEqual(frame.load_recent_btn.GetLabel(), "Load Selected Commit")
+                self.assertTrue(frame._frame.GetIcon().IsOk())
                 self.assertFalse(hasattr(frame, "status_ctrl"))
                 self.assertIn("desired GitHub commit hash", frame.target_hint.GetLabel())
                 self.assertNotIn("unique commit hash", frame.target_hint.GetLabel())
