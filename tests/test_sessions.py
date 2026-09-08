@@ -208,5 +208,70 @@ class SessionPolicyTests(unittest.TestCase):
         )
 
 
+class SessionLivenessTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = TemporaryDirectory()
+        self.data_dir = Path(self.temp.name)
+        self.runner = FakeRunner()
+        self.backend = LauncherBackend(
+            data_dir=self.data_dir,
+            runner=self.runner,
+            python="python",
+            fetch_pypi_version=lambda: "3.0.1",
+        )
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def _launch_official(self):
+        confirmation = self.backend.prepare_home()
+        self.backend.apply(confirmation, approved=True)
+        return self.backend.launch(
+            wait=False,
+            session_class=session_class_for_action(HOME),
+        )
+
+    def test_wait_false_exited_process_can_launch_again(self) -> None:
+        first = self._launch_official()
+        self.assertTrue(first.started)
+        self.assertTrue(self.backend.sessions.has_active(OFFICIAL_RELEASE_SESSION))
+        proc = self.runner.started_procs[-1]
+        second = self.backend.launch(
+            wait=False,
+            session_class=session_class_for_action(HOME),
+        )
+        self.assertTrue(second.blocked)
+        proc.mark_exited(0)
+        self.assertFalse(self.backend.sessions.has_active(OFFICIAL_RELEASE_SESSION))
+        again = self.backend.launch(
+            wait=False,
+            session_class=session_class_for_action(HOME),
+        )
+        self.assertTrue(again.started)
+        self.assertFalse(again.blocked)
+        self.assertTrue(self.backend.sessions.has_active(OFFICIAL_RELEASE_SESSION))
+        self.assertEqual(len(self.runner.started_procs), 2)
+        self.assertNotIn(proc.pid, self.backend._child_procs)
+
+    def test_real_pids_are_not_kept_alive_by_impl_pid_set(self) -> None:
+        self._launch_official()
+        proc = self.runner.started_procs[-1]
+        self.backend._impl_live_pids.add(proc.pid)
+        proc.mark_exited(0)
+        self.assertFalse(self.backend.sessions.has_active(OFFICIAL_RELEASE_SESSION))
+        self.assertNotIn(proc.pid, self.backend._child_procs)
+
+    def test_wait_true_unregisters_after_exit(self) -> None:
+        confirmation = self.backend.prepare_home()
+        self.backend.apply(confirmation, approved=True)
+        result = self.backend.launch(
+            wait=True,
+            session_class=session_class_for_action(HOME),
+        )
+        self.assertTrue(result.started)
+        self.assertFalse(self.backend.sessions.has_active(OFFICIAL_RELEASE_SESSION))
+        self.assertEqual(self.backend._child_procs, {})
+
+
 if __name__ == "__main__":
     unittest.main()

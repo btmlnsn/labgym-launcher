@@ -179,8 +179,17 @@ class FakeProcess:
         self.argv = argv
         self.pid = pid
         self.returncode = returncode
+        self._poll_result = None
+
+    def poll(self):
+        return self._poll_result
+
+    def mark_exited(self, code: Optional[int] = None) -> None:
+        self._poll_result = self.returncode if code is None else code
 
     def wait(self) -> int:
+        if self._poll_result is None:
+            self.mark_exited(self.returncode)
         return self.returncode
 
 

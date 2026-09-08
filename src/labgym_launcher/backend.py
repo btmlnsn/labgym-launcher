@@ -109,7 +109,8 @@ class LauncherBackend:
         self.pip = PipOps(self.runner, self.python)
         self.home_path = home_checkout_path(self.data_dir)
         self.demo_path = demo_checkout_path(self.data_dir)
-        self._live_pids = set()
+        self._impl_live_pids = set()
+        self._child_procs: Dict[int, Any] = {}
         self._next_impl_pid = 100000000
         self.sessions = SessionRegistry(self.data_dir, is_alive=self._pid_is_alive)
         self.last_launch_result: Optional[LaunchResult] = None
@@ -273,7 +274,7 @@ class LauncherBackend:
             if not wait and resolved_class:
                 pid = self._next_impl_pid
                 self._next_impl_pid += 1
-                self._live_pids.add(pid)
+                self._impl_live_pids.add(pid)
                 self._register_session(resolved_class, pid, state, checkout)
             result = LaunchResult.launched()
             self.last_launch_result = result
@@ -283,13 +284,13 @@ class LauncherBackend:
             proc = self.runner.start(args, cwd=checkout)
             pid = getattr(proc, "pid", None)
             if resolved_class and pid:
-                self._live_pids.add(int(pid))
+                self._remember_child(int(pid), proc)
                 self._register_session(resolved_class, int(pid), state, checkout)
             wait_fn = getattr(proc, "wait", None)
             code = wait_fn() if callable(wait_fn) else 0
             if resolved_class:
                 if pid:
-                    self._live_pids.discard(int(pid))
+                    self._forget_child(int(pid))
                 self.sessions.unregister(resolved_class)
             if code != 0:
                 raise LaunchRefusedError(
@@ -305,7 +306,7 @@ class LauncherBackend:
         proc = self.runner.start(args, cwd=checkout)
         pid = getattr(proc, "pid", None)
         if resolved_class and pid:
-            self._live_pids.add(int(pid))
+            self._remember_child(int(pid), proc)
             self._register_session(resolved_class, int(pid), state, checkout)
         result = LaunchResult.launched()
         self.last_launch_result = result
@@ -314,12 +315,27 @@ class LauncherBackend:
     def end_session(self, session_class: str) -> None:
         record = self.sessions.active(session_class)
         if record is not None:
-            self._live_pids.discard(record.pid)
+            self._forget_child(record.pid)
         self.sessions.unregister(session_class)
 
+    def _remember_child(self, pid: int, proc: Any) -> None:
+        self._child_procs[int(pid)] = proc
+
+    def _forget_child(self, pid: int) -> None:
+        self._child_procs.pop(int(pid), None)
+        self._impl_live_pids.discard(int(pid))
+
     def _pid_is_alive(self, pid: int) -> bool:
-        if pid in self._live_pids:
-            return True
+        proc = self._child_procs.get(int(pid))
+        if proc is not None:
+            poll = getattr(proc, "poll", None)
+            if callable(poll):
+                if poll() is None:
+                    return True
+                self._forget_child(int(pid))
+                return False
+        if self.launch_impl is not None:
+            return int(pid) in self._impl_live_pids
         return process_is_alive(pid)
 
     def _session_class_from_state(self) -> Optional[str]:
