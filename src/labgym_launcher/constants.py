@@ -26,7 +26,7 @@ SOURCE_BRANCH_UNKNOWN_LABEL = "source branch unknown"
 GITHUB_BRANCHES_WHERE_HEAD_URL = (
     "https://api.github.com/repos/%s/commits/%s/branches-where-head"
 )
-USER_AGENT = "labgym-launcher/0.1.0"
+USER_AGENT = "labgym-launcher/0.2.0"
 HASH_PATTERN = re.compile(r"^[0-9a-fA-F]{4,40}$")
 FULL_HASH_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
 SOURCE_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")

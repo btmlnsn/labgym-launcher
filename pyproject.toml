@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labgym-launcher"
-version = "0.1.0"
+version = "0.2.0"
 description = "Team launcher for the official LabGym PyPI release and demo git commits."
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
