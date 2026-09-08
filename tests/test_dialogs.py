@@ -18,6 +18,23 @@ from labgym_launcher.theme import (
 )
 
 
+def _require_wx():
+    try:
+        import wx
+    except ImportError:
+        raise unittest.SkipTest("wxPython is not installed")
+    return wx
+
+
+def _wx_app(wxmod):
+    try:
+        return wxmod.App(False)
+    except SystemExit as exc:
+        raise unittest.SkipTest(
+            "wxPython needs a display; this runner has none"
+        ) from exc
+
+
 class ConfirmationParentPlanTests(unittest.TestCase):
     def test_plan_forbids_nested_panel_button_parent(self) -> None:
         plan = confirmation_dialog_parent_plan()
@@ -60,13 +77,10 @@ class SelectionPaletteTests(unittest.TestCase):
 
 class ConfirmationDialogWxTests(unittest.TestCase):
     def test_confirmation_widgets_are_parented_to_the_dialog(self) -> None:
-        try:
-            import wx
-        except ImportError:
-            self.skipTest("wxPython is not installed")
+        wx = _require_wx()
         from labgym_launcher.gui import ConfirmationDialog
 
-        app = wx.App(False)
+        app = _wx_app(wx)
         try:
             frame = wx.Frame(None)
             dialog = ConfirmationDialog(
@@ -97,10 +111,7 @@ class ConfirmationDialogWxTests(unittest.TestCase):
 
 class LauncherFrameWxTests(unittest.TestCase):
     def test_primary_buttons_compact_session_and_readable_recent_list(self) -> None:
-        try:
-            import wx
-        except ImportError:
-            self.skipTest("wxPython is not installed")
+        wx = _require_wx()
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
@@ -110,7 +121,7 @@ class LauncherFrameWxTests(unittest.TestCase):
         from fakes import DEMO_SHA, FakeRunner
 
         temp = TemporaryDirectory()
-        app = wx.App(False)
+        app = _wx_app(wx)
         try:
             backend = LauncherBackend(
                 data_dir=Path(temp.name),
@@ -215,10 +226,7 @@ class LauncherFrameWxTests(unittest.TestCase):
             temp.cleanup()
 
     def test_forced_dark_palette_is_applied_to_recent_list(self) -> None:
-        try:
-            import wx
-        except ImportError:
-            self.skipTest("wxPython is not installed")
+        wx = _require_wx()
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
@@ -228,7 +236,7 @@ class LauncherFrameWxTests(unittest.TestCase):
         from fakes import DEMO_SHA, FakeRunner
 
         temp = TemporaryDirectory()
-        app = wx.App(False)
+        app = _wx_app(wx)
         try:
             backend = LauncherBackend(
                 data_dir=Path(temp.name),
@@ -280,10 +288,7 @@ class LauncherFrameWxTests(unittest.TestCase):
 
 
     def test_recent_list_shows_alias_before_provenance(self) -> None:
-        try:
-            import wx
-        except ImportError:
-            self.skipTest("wxPython is not installed")
+        wx = _require_wx()
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
@@ -293,7 +298,7 @@ class LauncherFrameWxTests(unittest.TestCase):
         from fakes import DEMO_SHA, FakeRunner
 
         temp = TemporaryDirectory()
-        app = wx.App(False)
+        app = _wx_app(wx)
         try:
             backend = LauncherBackend(
                 data_dir=Path(temp.name),
@@ -342,14 +347,11 @@ class LauncherFrameWxTests(unittest.TestCase):
 
 class AliasDialogWxTests(unittest.TestCase):
     def test_dialog_shows_readonly_provenance_and_editable_alias(self) -> None:
-        try:
-            import wx
-        except ImportError:
-            self.skipTest("wxPython is not installed")
+        wx = _require_wx()
         from labgym_launcher.gui import DemoEditDialog
         from fakes import DEMO_SHA
 
-        app = wx.App(False)
+        app = _wx_app(wx)
         try:
             frame = wx.Frame(None)
             dialog = DemoEditDialog(
@@ -376,10 +378,7 @@ class AliasDialogWxTests(unittest.TestCase):
             app.Destroy()
 
     def test_edit_action_updates_and_clears_alias_without_changing_identity(self) -> None:
-        try:
-            import wx
-        except ImportError:
-            self.skipTest("wxPython is not installed")
+        wx = _require_wx()
         from pathlib import Path
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
@@ -398,7 +397,7 @@ class AliasDialogWxTests(unittest.TestCase):
                 return wx.ID_OK
 
         temp = TemporaryDirectory()
-        app = wx.App(False)
+        app = _wx_app(wx)
         try:
             backend = LauncherBackend(
                 data_dir=Path(temp.name),

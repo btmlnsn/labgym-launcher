@@ -19,6 +19,7 @@ classifiers = [
 
 [project.optional-dependencies]
 gui = ["wxPython>=4.2"]
+test = ["Pillow"]
 
 [project.scripts]
 labgym-launcher = "labgym_launcher.dispatch:main"
