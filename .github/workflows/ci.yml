@@ -44,7 +44,7 @@ jobs:
           python -m pip install -U pip
           if [ "${{ runner.os }}" = "Linux" ]; then
             python -m pip install -e ".[test]"
-            python -m pip install -U \
+            python -m pip install --no-index --only-binary=:all: \
               -f https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04 \
               "wxPython>=4.2"
           else

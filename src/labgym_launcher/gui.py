@@ -434,7 +434,7 @@ class LauncherFrame:
 
         self.session_box = wxmod.StaticBox(panel, label="Session")
         session = wxmod.StaticBoxSizer(self.session_box, wxmod.VERTICAL)
-        self.session_panel = wxmod.Panel(panel)
+        self.session_panel = wxmod.Panel(self.session_box)
         session_inner = wxmod.BoxSizer(wxmod.VERTICAL)
         session_style = wxmod.TE_MULTILINE | wxmod.TE_READONLY | wxmod.BORDER_NONE
         if hasattr(wxmod, "TE_NO_VSCROLL"):
@@ -445,23 +445,32 @@ class LauncherFrame:
         self.session_panel.SetSizer(session_inner)
         session.Add(self.session_panel, 1, wxmod.ALL | wxmod.EXPAND, 8)
         session_buttons = wxmod.BoxSizer(wxmod.HORIZONTAL)
-        self.details_btn = wxmod.Button(panel, label="Details")
+        self.details_btn = wxmod.Button(self.session_box, label="Details")
         session_buttons.Add(self.details_btn, 0)
         session.Add(session_buttons, 0, wxmod.LEFT | wxmod.RIGHT | wxmod.BOTTOM | wxmod.ALIGN_RIGHT, 8)
         outer.Add(session, 0, wxmod.ALL | wxmod.EXPAND, 10)
 
-        top = wxmod.StaticBoxSizer(wxmod.StaticBox(panel, label="Target"), wxmod.VERTICAL)
+        self.target_box = wxmod.StaticBox(panel, label="Target")
+        top = wxmod.StaticBoxSizer(self.target_box, wxmod.VERTICAL)
         grid = wxmod.FlexGridSizer(2, 2, 8, 8)
         grid.AddGrowableCol(1, 1)
-        grid.Add(wxmod.StaticText(panel, label="Source repo"), 0, wxmod.ALIGN_CENTER_VERTICAL)
-        self.source_ctrl = wxmod.TextCtrl(panel, value=CANONICAL_SOURCE)
+        grid.Add(
+            wxmod.StaticText(self.target_box, label="Source repo"),
+            0,
+            wxmod.ALIGN_CENTER_VERTICAL,
+        )
+        self.source_ctrl = wxmod.TextCtrl(self.target_box, value=CANONICAL_SOURCE)
         grid.Add(self.source_ctrl, 1, wxmod.EXPAND)
-        grid.Add(wxmod.StaticText(panel, label="Commit hash"), 0, wxmod.ALIGN_CENTER_VERTICAL)
-        self.commit_ctrl = wxmod.TextCtrl(panel)
+        grid.Add(
+            wxmod.StaticText(self.target_box, label="Commit hash"),
+            0,
+            wxmod.ALIGN_CENTER_VERTICAL,
+        )
+        self.commit_ctrl = wxmod.TextCtrl(self.target_box)
         grid.Add(self.commit_ctrl, 1, wxmod.EXPAND)
         top.Add(grid, 0, wxmod.ALL | wxmod.EXPAND, 10)
         hint = wxmod.StaticText(
-            panel,
+            self.target_box,
             label="username/repo-name and a desired GitHub commit hash. Default source: umyelab/LabGym.",
         )
         hint.SetName(SECONDARY_WIDGET_NAME)
@@ -481,17 +490,15 @@ class LauncherFrame:
         buttons.Add(self.refresh_btn, 0)
         outer.Add(buttons, 0, wxmod.LEFT | wxmod.RIGHT | wxmod.BOTTOM, 10)
 
-        recent_box = wxmod.StaticBoxSizer(
-            wxmod.StaticBox(panel, label="Recent selected commits"),
-            wxmod.VERTICAL,
-        )
-        self.recent_list = _recent_commit_list_type()(panel, self.palette)
+        self.recent_box = wxmod.StaticBox(panel, label="Recent selected commits")
+        recent_box = wxmod.StaticBoxSizer(self.recent_box, wxmod.VERTICAL)
+        self.recent_list = _recent_commit_list_type()(self.recent_box, self.palette)
         self.recent_list.SetMinSize((-1, 220))
         recent_box.Add(self.recent_list, 1, wxmod.ALL | wxmod.EXPAND, 8)
         recent_buttons = wxmod.BoxSizer(wxmod.HORIZONTAL)
-        self.load_recent_btn = wxmod.Button(panel, label=LOAD_SELECTED_COMMIT_LABEL)
-        self.edit_recent_btn = wxmod.Button(panel, label="Edit")
-        self.remove_recent_btn = wxmod.Button(panel, label="Remove")
+        self.load_recent_btn = wxmod.Button(self.recent_box, label=LOAD_SELECTED_COMMIT_LABEL)
+        self.edit_recent_btn = wxmod.Button(self.recent_box, label="Edit")
+        self.remove_recent_btn = wxmod.Button(self.recent_box, label="Remove")
         recent_buttons.Add(self.load_recent_btn, 0, wxmod.RIGHT, 8)
         recent_buttons.Add(self.edit_recent_btn, 0, wxmod.RIGHT, 8)
         recent_buttons.Add(self.remove_recent_btn, 0)

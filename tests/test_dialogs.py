@@ -115,6 +115,7 @@ class LauncherFrameWxTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
+        from labgym_launcher.app_icon import get_frame_icon_path, packaged_icon_paths
         from labgym_launcher.backend import LauncherBackend
         from labgym_launcher.gui import LauncherFrame
         from labgym_launcher.recent import RecentDemo
@@ -145,7 +146,18 @@ class LauncherFrameWxTests(unittest.TestCase):
                 self.assertEqual(frame.window_panel.GetName(), WINDOW_PANEL_NAME)
                 self.assertEqual(frame.details_btn.GetLabel(), "Details")
                 self.assertEqual(frame.load_recent_btn.GetLabel(), "Load Selected Commit")
-                self.assertTrue(frame._frame.GetIcon().IsOk())
+                icon_path = get_frame_icon_path()
+                self.assertTrue(icon_path)
+                self.assertTrue(Path(icon_path).is_file())
+                loaded_icon = wx.Icon(icon_path, wx.BITMAP_TYPE_ANY)
+                if not loaded_icon.IsOk():
+                    png_path = packaged_icon_paths()["png"]
+                    self.assertTrue(png_path.is_file())
+                    loaded_icon = wx.Icon(str(png_path), wx.BITMAP_TYPE_ANY)
+                self.assertTrue(
+                    loaded_icon.IsOk(),
+                    "wx failed to load frame icon from %s" % icon_path,
+                )
                 self.assertFalse(hasattr(frame, "status_ctrl"))
                 self.assertIn("desired GitHub commit hash", frame.target_hint.GetLabel())
                 self.assertNotIn("unique commit hash", frame.target_hint.GetLabel())

@@ -63,6 +63,10 @@ def set_frame_icon(frame) -> None:
         LOGGER.info("launcher frame icon asset not found")
         return
     icon = wx.Icon(icon_path, wx.BITMAP_TYPE_ANY)
+    if not icon.IsOk() and sys.platform.startswith("win"):
+        png = _existing(packaged_icon_paths()["png"])
+        if png is not None:
+            icon = wx.Icon(str(png), wx.BITMAP_TYPE_ANY)
     if icon.IsOk():
         frame.SetIcon(icon)
     else:
