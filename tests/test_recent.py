@@ -4,8 +4,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from labgym_launcher.recent import (
+    DISPLAY_ALIAS_MAX,
+    DISPLAY_REPO_MAX,
+    DISPLAY_SUBJECT_MAX,
     RecentDemo,
     dedupe_recent,
+    display_html_label,
+    ellipsize_end,
+    ellipsize_middle,
     load_recent,
     normalize_alias,
     record_recent,
@@ -236,6 +242,78 @@ class RecentDemoTests(unittest.TestCase):
         html = item.html_label()
         self.assertIn("&lt;b&gt;unsafe&lt;/b&gt;", html)
         self.assertNotIn("<b>unsafe</b>", html)
+
+    def test_display_html_truncates_long_alias_only(self) -> None:
+        alias = "A" * (DISPLAY_ALIAS_MAX + 12)
+        item = RecentDemo(
+            "alice/LabGym",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            subject="Add selected-commit UI",
+            alias=alias,
+        )
+        display = display_html_label(item)
+        self.assertIn("...", display)
+        self.assertNotIn(alias, display)
+        self.assertEqual(item.alias, alias)
+        self.assertIn(alias, item.label())
+        self.assertIn(alias, item.html_label())
+        self.assertNotIn("...", item.html_label())
+        self.assertIn("alice/LabGym @ aaaaaaa", display)
+
+    def test_display_html_truncates_long_repo_and_keeps_hash(self) -> None:
+        repo = "verylongorganizationname/extremely-long-repository-name-for-labgym"
+        self.assertGreater(len(repo), DISPLAY_REPO_MAX)
+        item = RecentDemo(repo, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", subject="Short")
+        display = display_html_label(item)
+        self.assertIn("...", display)
+        self.assertIn(" @ aaaaaaa", display)
+        self.assertNotIn(repo, display)
+        self.assertEqual(item.source_repo, repo)
+        self.assertEqual(item.commit, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        self.assertIn(repo, item.label())
+        self.assertIn(repo, item.html_label())
+        self.assertNotIn("...", item.html_label())
+        displayed_repo = ellipsize_middle(repo, DISPLAY_REPO_MAX)
+        self.assertEqual(len(displayed_repo), DISPLAY_REPO_MAX)
+        self.assertIn(displayed_repo, display)
+
+    def test_display_html_truncates_long_subject_only(self) -> None:
+        subject = "S" * (DISPLAY_SUBJECT_MAX + 20)
+        item = RecentDemo("alice/LabGym", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", subject=subject)
+        display = display_html_label(item)
+        self.assertIn("...", display)
+        self.assertNotIn(subject, display)
+        self.assertEqual(item.subject, subject)
+        self.assertIn(subject, item.label())
+        self.assertIn(subject, item.html_label())
+        self.assertNotIn("...", item.html_label())
+        self.assertIn("alice/LabGym @ aaaaaaa", display)
+
+    def test_display_html_leaves_short_strings_unchanged(self) -> None:
+        item = RecentDemo(
+            "alice/LabGym",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            subject="Add selected-commit UI",
+            alias="Courtship demo",
+        )
+        display = display_html_label(item)
+        self.assertNotIn("...", display)
+        self.assertEqual(display, item.html_label())
+
+    def test_display_html_escapes_truncated_alias(self) -> None:
+        alias = "<b>" + ("x" * DISPLAY_ALIAS_MAX)
+        item = RecentDemo("alice/LabGym", "abc1", alias=alias)
+        display = display_html_label(item)
+        self.assertIn("&lt;b&gt;", display)
+        self.assertNotIn("<b>xxx", display)
+        self.assertIn("...", display)
+
+    def test_ellipsize_helpers_keep_short_text(self) -> None:
+        self.assertEqual(ellipsize_end("short", 48), "short")
+        self.assertEqual(ellipsize_middle("alice/LabGym", 40), "alice/LabGym")
+        self.assertTrue(ellipsize_end("n" * 60, DISPLAY_SUBJECT_MAX).endswith("..."))
+        self.assertEqual(len(ellipsize_end("n" * 60, DISPLAY_SUBJECT_MAX)), DISPLAY_SUBJECT_MAX)
+        self.assertEqual(len(ellipsize_middle("r" * 80, DISPLAY_REPO_MAX)), DISPLAY_REPO_MAX)
 
 
 if __name__ == "__main__":

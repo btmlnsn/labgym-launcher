@@ -41,6 +41,7 @@ from labgym_launcher.gui_flow import (
 )
 from labgym_launcher.recent import (
     RecentDemo,
+    display_html_label,
     load_recent,
     remove_recent,
     save_recent,
@@ -692,11 +693,19 @@ class LauncherFrame:
         event.Skip()
 
     def refresh_recent_list(self) -> None:
-        labels = [item.html_label() for item in self.recent]
+        labels = [display_html_label(item) for item in self.recent]
         self.recent_list.Set(labels)
         if labels:
             self.recent_list.SetSelection(0)
+        self._update_recent_tooltip()
         self._update_action_enablement()
+
+    def _update_recent_tooltip(self) -> None:
+        item = self._selected_recent()
+        if item is None:
+            self.recent_list.SetToolTip("")
+            return
+        self.recent_list.SetToolTip(item.label())
 
     def _recent_selection_index(self) -> int:
         wxmod = _wx()
@@ -916,6 +925,7 @@ class LauncherFrame:
 
     def on_recent_selection(self, event) -> None:
         self._update_action_enablement()
+        self._update_recent_tooltip()
         event.Skip()
 
     def on_load_recent(self, event) -> None:

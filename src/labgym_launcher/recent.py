@@ -5,15 +5,44 @@ from html import escape
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from labgym_launcher.confirm import format_selected_commit_label
+from labgym_launcher.confirm import format_selected_commit_label, shorten_commit
 
 LOGGER = logging.getLogger("labgym_launcher")
 RECENT_FILENAME = "recent_demos.json"
+DISPLAY_ALIAS_MAX = 48
+DISPLAY_REPO_MAX = 40
+DISPLAY_SUBJECT_MAX = 56
+DISPLAY_ELLIPSIS = "..."
 
 
 def normalize_alias(alias: Optional[str]) -> Optional[str]:
     text = " ".join((alias or "").split())
     return text or None
+
+
+def ellipsize_end(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= len(DISPLAY_ELLIPSIS):
+        return DISPLAY_ELLIPSIS[:max_chars]
+    return text[: max_chars - len(DISPLAY_ELLIPSIS)] + DISPLAY_ELLIPSIS
+
+
+def ellipsize_middle(text: str, max_chars: int) -> str:
+    if max_chars <= 0:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= len(DISPLAY_ELLIPSIS):
+        return DISPLAY_ELLIPSIS[:max_chars]
+    inner = max_chars - len(DISPLAY_ELLIPSIS)
+    left = inner // 2
+    right = inner - left
+    if right <= 0:
+        return ellipsize_end(text, max_chars)
+    return text[:left] + DISPLAY_ELLIPSIS + text[-right:]
 
 
 def _html_from_label(text: str) -> str:
@@ -47,6 +76,20 @@ class RecentDemo:
 
     def html_label(self) -> str:
         return _html_from_label(self.label())
+
+
+def display_html_label(item: "RecentDemo") -> str:
+    """List-only HTML: truncated alias/repo/subject, full 7-char hash."""
+    lines = []
+    alias_text = normalize_alias(item.alias)
+    if alias_text:
+        lines.append(ellipsize_end(alias_text, DISPLAY_ALIAS_MAX))
+    repo = ellipsize_middle(item.source_repo, DISPLAY_REPO_MAX)
+    lines.append("%s @ %s" % (repo, shorten_commit(item.commit, 7)))
+    subject_text = " ".join((item.subject or "").split())
+    if subject_text:
+        lines.append(ellipsize_end(subject_text, DISPLAY_SUBJECT_MAX))
+    return _html_from_label("\n".join(lines))
 
 
 def recent_path(data_dir: Path) -> Path:

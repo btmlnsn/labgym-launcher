@@ -248,8 +248,9 @@ class LauncherFrameWxTests(unittest.TestCase):
                 self.assertEqual(html.count("<br>"), 1)
                 self.assertIn("alice/LabGym", html)
                 self.assertIn(DEMO_SHA[:7], html)
-                self.assertIn(long_subject, html)
-                self.assertNotIn("...", html)
+                self.assertIn("...", html)
+                self.assertNotIn(long_subject, html)
+                self.assertEqual(frame.recent[0].subject, long_subject)
                 self.assertNotIn("detached commit", html)
                 self.assertNotIn("Branch:", html)
                 selected_bg = frame.recent_list.GetSelectionBackground()
@@ -259,7 +260,9 @@ class LauncherFrameWxTests(unittest.TestCase):
                 )
                 selected_html = frame.recent_list.OnGetItem(0)
                 self.assertIn(rgb_to_hex(frame.palette.selected_row_text), selected_html)
-                self.assertIn(long_subject, selected_html)
+                self.assertIn("...", selected_html)
+                self.assertIn(DEMO_SHA[:7], selected_html)
+                self.assertNotIn(long_subject, selected_html)
 
                 frame.source_ctrl.SetValue("other/LabGym")
                 frame.commit_ctrl.SetValue("deadbeef")
@@ -484,6 +487,88 @@ class LauncherFrameWxTests(unittest.TestCase):
                 reloaded = load_recent(backend.data_dir)
                 self.assertEqual(reloaded[0].alias, "Courtship demo")
                 self.assertIsNone(reloaded[1].alias)
+            finally:
+                frame._frame.Destroy()
+        finally:
+            app.Destroy()
+            temp.cleanup()
+
+    def test_recent_list_truncates_display_but_keeps_full_data(self) -> None:
+        wx = _require_wx()
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+
+        from labgym_launcher import gui as gui_mod
+        from labgym_launcher.backend import LauncherBackend
+        from labgym_launcher.gui import LauncherFrame
+        from labgym_launcher.recent import DISPLAY_ALIAS_MAX, RecentDemo
+        from fakes import DEMO_SHA, FakeRunner
+
+        long_alias = "A" * (DISPLAY_ALIAS_MAX + 20)
+        long_repo = "verylongorganizationname/extremely-long-repository-name-for-labgym"
+        long_subject = "S" * 80
+        captured = {}
+
+        class _CaptureDialog(gui_mod.DemoEditDialog):
+            def __init__(self, parent, source_repo, commit, alias="", palette=None):
+                captured["source"] = source_repo
+                captured["commit"] = commit
+                captured["alias"] = alias
+                super().__init__(parent, source_repo, commit, alias, palette=palette)
+
+            def ShowModal(self) -> int:
+                return wx.ID_CANCEL
+
+        temp = TemporaryDirectory()
+        app = _wx_app(wx)
+        try:
+            backend = LauncherBackend(
+                data_dir=Path(temp.name),
+                runner=FakeRunner(),
+                python="python",
+                fetch_pypi_version=lambda: "3.0.1",
+            )
+            frame = LauncherFrame(backend=backend)
+            try:
+                frame.recent = [
+                    RecentDemo(
+                        long_repo,
+                        DEMO_SHA,
+                        subject=long_subject,
+                        alias=long_alias,
+                    ),
+                    RecentDemo("bob/LabGym", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", subject="Short"),
+                ]
+                frame.refresh_recent_list()
+                html = frame.recent_list.GetString(0)
+                self.assertIn("...", html)
+                self.assertIn(DEMO_SHA[:7], html)
+                self.assertNotIn(long_alias, html)
+                self.assertNotIn(long_repo, html)
+                self.assertNotIn(long_subject, html)
+                self.assertEqual(frame.recent[0].alias, long_alias)
+                self.assertEqual(frame.recent[0].source_repo, long_repo)
+                self.assertEqual(frame.recent[0].commit, DEMO_SHA)
+                self.assertEqual(frame.recent[0].subject, long_subject)
+
+                selected_html = frame.recent_list.OnGetItem(0)
+                self.assertIn(rgb_to_hex(frame.palette.selected_row_text), selected_html)
+                frame.recent_list.SetSelection(1)
+                unselected_html = frame.recent_list.OnGetItem(0)
+                self.assertIn(rgb_to_hex(frame.palette.primary_text), unselected_html)
+                self.assertIn(rgb_to_hex(frame.palette.selected_row_text), frame.recent_list.OnGetItem(1))
+
+                frame.recent_list.SetSelection(0)
+                frame.on_load_recent(None)
+                self.assertEqual(frame.source_ctrl.GetValue(), long_repo)
+                self.assertEqual(frame.commit_ctrl.GetValue(), DEMO_SHA)
+
+                with patch.object(gui_mod, "DemoEditDialog", _CaptureDialog):
+                    frame.on_edit_recent(None)
+                self.assertEqual(captured["source"], long_repo)
+                self.assertEqual(captured["commit"], DEMO_SHA)
+                self.assertEqual(captured["alias"], long_alias)
             finally:
                 frame._frame.Destroy()
         finally:
