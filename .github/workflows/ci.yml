@@ -45,12 +45,31 @@ jobs:
           if [ "${{ runner.os }}" = "Linux" ]; then
             python -m pip install -e ".[test]"
             python -m pip install "numpy" "six"
-            python -m pip install --no-index --only-binary=:all: --no-deps \
-              -f https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04 \
-              "wxPython==4.2.5"
           else
             python -m pip install -e ".[gui,test]"
           fi
+
+      - name: Install Linux wxPython
+        if: runner.os == 'Linux'
+        run: |
+          extras_url="https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-22.04"
+          attempt=1
+          max_attempts=3
+          while true; do
+            if python -m pip install --timeout 120 \
+              --no-index --only-binary=:all: --no-deps \
+              -f "$extras_url" \
+              "wxPython==4.2.5"; then
+              break
+            fi
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "wxPython==4.2.5 install failed after ${max_attempts} attempts" >&2
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "Retrying wxPython install (attempt ${attempt}/${max_attempts})..."
+            sleep 5
+          done
 
       - name: Test
         run: |
