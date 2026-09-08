@@ -13,6 +13,7 @@ from labgym_launcher.gui_flow import (
     format_session_summary,
     prepare_demo,
     prepare_home,
+    prepare_rollback,
     record_demo_if_needed,
     select_official_release,
     select_selected_commit,
@@ -50,7 +51,19 @@ class GuiFlowTests(unittest.TestCase):
         self.assertIn("Resolved: 3.0.1", text)
         self.assertIn("labgym:", text)
         self.assertIn("Install required:", text)
+        self.assertIn("LabGym will launch: yes", text.split("Details")[0])
+        self.assertLess(text.index("Action:"), text.index("Details"))
+        self.assertNotIn("pip-reported", text)
+        self.assertNotIn("in this stage", text)
         self.assertEqual(self.runner.install_calls(), [])
+
+    def test_restore_confirmation_display_does_not_launch(self) -> None:
+        confirmation = prepare_rollback(self.backend)
+        text = confirmation_display(confirmation)
+        self.assertTrue(text.startswith("Action: Restore Official Release"))
+        self.assertIn("LabGym will launch: no", text.split("Details")[0])
+        self.assertIn("Restore Official Release does not launch LabGym.", text)
+        self.assertNotIn("before installing", text)
 
     def test_cancel_does_not_install_or_launch(self) -> None:
         confirmation = prepare_home(self.backend)
@@ -245,10 +258,14 @@ class GuiSummaryAndErrorTests(unittest.TestCase):
         self.assertNotIn("Data dir:", summary)
 
     def test_gui_error_rewrites_cli_demo_usage(self) -> None:
-        from labgym_launcher.errors import InvalidHashError
+        from labgym_launcher.errors import AmbiguousHashError, InstallFailedError, InvalidHashError, MissingHashError
         from labgym_launcher.gui_flow import (
             CLI_DEMO_USAGE,
+            DIAGNOSTIC_OUTPUT_LABEL,
             GUI_EMPTY_COMMIT_ERROR,
+            confirmation_intro,
+            confirmation_ok_label,
+            gui_error_parts,
             gui_error_text,
             selected_commit_action_enabled,
             remembered_actions_enabled,
@@ -270,8 +287,57 @@ class GuiSummaryAndErrorTests(unittest.TestCase):
             "Selected commit 'master' is not a git commit hash. "
             "Current environment was not changed."
         )
-        self.assertIn("not a git commit hash", gui_error_text(other))
+        self.assertIn("Selected Commit 'master' is not a git commit hash.", gui_error_text(other))
+        self.assertTrue(gui_error_text(other).startswith("Selected Commit "))
         self.assertNotIn("Usage: demo", gui_error_text(other))
+        self.assertIsNone(gui_error_parts(other)[1])
+
+        ambiguous = AmbiguousHashError(
+            "Commit hash 'abc1' is ambiguous in umyelab/LabGym. "
+            "Use a longer unique prefix or the full hash. "
+            "Current environment was not changed. "
+            "git: error: short SHA1 abc1 is ambiguous"
+        )
+        amb_lead, amb_detail = gui_error_parts(ambiguous)
+        self.assertTrue(amb_lead.startswith("Commit hash 'abc1' is ambiguous"))
+        self.assertNotIn("git:", amb_lead)
+        self.assertIn("git:", amb_detail)
+        amb_text = gui_error_text(ambiguous)
+        self.assertTrue(amb_text.startswith("Commit hash 'abc1' is ambiguous"))
+        self.assertIn(DIAGNOSTIC_OUTPUT_LABEL, amb_text)
+        self.assertLess(amb_text.index("ambiguous"), amb_text.index(DIAGNOSTIC_OUTPUT_LABEL))
+
+        missing = MissingHashError(
+            "Commit hash 'deadbeef' does not resolve to a commit in umyelab/LabGym. "
+            "Current environment was not changed. "
+            "git: fatal: Needed a single revision"
+        )
+        miss_lead, miss_detail = gui_error_parts(missing)
+        self.assertTrue(miss_lead.startswith("Commit hash 'deadbeef' does not resolve"))
+        self.assertNotIn("git:", miss_lead)
+        self.assertIn("git:", miss_detail)
+
+        install = InstallFailedError(
+            "Dependency installation failed. LabGym was not launched.\n"
+            "ERROR: Could not install packages\n"
+            "Previous environment snapshot was restored."
+        )
+        inst_lead, inst_detail = gui_error_parts(install)
+        self.assertTrue(
+            inst_lead.startswith("Dependency installation failed. LabGym was not launched.")
+        )
+        self.assertIn("Previous environment snapshot was restored.", inst_lead)
+        self.assertNotIn("ERROR: Could not install packages", inst_lead)
+        self.assertIn("ERROR: Could not install packages", inst_detail)
+        self.assertTrue(gui_error_text(install).startswith("Dependency installation failed."))
+        self.assertIn(DIAGNOSTIC_OUTPUT_LABEL, gui_error_text(install))
+
+        self.assertIn("before restoring", confirmation_intro("rollback"))
+        self.assertNotIn("before installing", confirmation_intro("rollback"))
+        self.assertIn("LabGym will not be launched", confirmation_intro("rollback"))
+        self.assertEqual(confirmation_ok_label("rollback"), "Restore")
+        self.assertEqual(confirmation_ok_label("home"), "Install")
+        self.assertIn("before installing", confirmation_intro("home"))
 
         self.assertFalse(selected_commit_action_enabled(""))
         self.assertFalse(selected_commit_action_enabled("   "))

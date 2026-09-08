@@ -11,6 +11,7 @@ from labgym_launcher.backend import LauncherBackend
 from labgym_launcher.confirm import format_status
 from labgym_launcher.constants import (
     CANONICAL_SOURCE,
+    HOME,
     LAUNCH_OFFICIAL_RELEASE_LABEL,
     RESTORE_OFFICIAL_LABEL,
     SELECTED_COMMIT_BUTTON_LABEL,
@@ -18,13 +19,17 @@ from labgym_launcher.constants import (
 from labgym_launcher.gui_flow import (
     ALREADY_ACTIVE,
     GUI_EMPTY_COMMIT_ERROR,
+    DIAGNOSTIC_OUTPUT_LABEL,
     REMOVE_REMEMBERED_TITLE,
     SESSION_BLOCKED,
     already_active_success_message,
     applied_success_message,
     apply_if_approved,
     confirmation_display,
+    confirmation_intro,
+    confirmation_ok_label,
     format_session_summary,
+    gui_error_parts,
     gui_error_text,
     record_demo_if_needed,
     remembered_actions_enabled,
@@ -256,6 +261,12 @@ def _recent_commit_list_type():
     return _RecentCommitList
 
 
+def _dialog_palette(palette: Optional[LauncherPalette] = None) -> LauncherPalette:
+    if palette is not None:
+        return palette
+    return resolve_launcher_palette()
+
+
 def _ok_cancel_sizer(wxmod, dialog, ok_label: Optional[str] = None):
     buttons = dialog.CreateButtonSizer(wxmod.OK | wxmod.CANCEL)
     if ok_label:
@@ -266,7 +277,13 @@ def _ok_cancel_sizer(wxmod, dialog, ok_label: Optional[str] = None):
 
 
 class ConfirmationDialog:
-    def __init__(self, parent, text: str) -> None:
+    def __init__(
+        self,
+        parent,
+        text: str,
+        action: str = HOME,
+        palette: Optional[LauncherPalette] = None,
+    ) -> None:
         wxmod = _wx()
         self._dialog = wxmod.Dialog(
             parent,
@@ -276,11 +293,9 @@ class ConfirmationDialog:
         root = wxmod.BoxSizer(wxmod.VERTICAL)
         label = wxmod.StaticText(
             self._dialog,
-            label=(
-                "Review the resolved commit and dependency changes before installing. "
-                "Nothing is installed until you confirm."
-            ),
+            label=confirmation_intro(action),
         )
+        self.intro_ctrl = label
         root.Add(label, 0, wxmod.ALL | wxmod.EXPAND, 10)
         box = wxmod.TextCtrl(
             self._dialog,
@@ -291,13 +306,20 @@ class ConfirmationDialog:
         self.details_ctrl = box
         root.Add(box, 1, wxmod.LEFT | wxmod.RIGHT | wxmod.BOTTOM | wxmod.EXPAND, 10)
         root.Add(
-            _ok_cancel_sizer(wxmod, self._dialog, ok_label="Install"),
+            _ok_cancel_sizer(
+                wxmod, self._dialog, ok_label=confirmation_ok_label(action)
+            ),
             0,
             wxmod.ALL | wxmod.ALIGN_RIGHT,
             10,
         )
         self._dialog.SetSizerAndFit(root)
-        apply_theme(self._dialog, resolve_launcher_palette())
+        wrap_width = self._dialog.GetClientSize().GetWidth() - 40
+        if wrap_width < 360:
+            wrap_width = 720
+        label.Wrap(wrap_width)
+        self._dialog.Fit()
+        apply_theme(self._dialog, _dialog_palette(palette))
         if parent:
             self._dialog.CentreOnParent()
         else:
@@ -331,6 +353,7 @@ class DemoEditDialog:
         source_repo: str,
         commit: str,
         alias: str = "",
+        palette: Optional[LauncherPalette] = None,
     ) -> None:
         wxmod = _wx()
         self._dialog = wxmod.Dialog(
@@ -385,7 +408,7 @@ class DemoEditDialog:
         root.Add(hint, 0, wxmod.LEFT | wxmod.RIGHT | wxmod.BOTTOM | wxmod.EXPAND, 10)
         root.Add(_ok_cancel_sizer(wxmod, self._dialog), 0, wxmod.ALL | wxmod.ALIGN_RIGHT, 10)
         self._dialog.SetSizerAndFit(root)
-        apply_theme(self._dialog, resolve_launcher_palette())
+        apply_theme(self._dialog, _dialog_palette(palette))
         if parent:
             self._dialog.CentreOnParent()
         else:
@@ -405,7 +428,12 @@ class DemoEditDialog:
 
 
 class StatusDetailsDialog:
-    def __init__(self, parent, text: str) -> None:
+    def __init__(
+        self,
+        parent,
+        text: str,
+        palette: Optional[LauncherPalette] = None,
+    ) -> None:
         wxmod = _wx()
         self._dialog = wxmod.Dialog(
             parent,
@@ -428,7 +456,61 @@ class StatusDetailsDialog:
             10,
         )
         self._dialog.SetSizerAndFit(root)
-        apply_theme(self._dialog, resolve_launcher_palette())
+        apply_theme(self._dialog, _dialog_palette(palette))
+        if parent:
+            self._dialog.CentreOnParent()
+        else:
+            self._dialog.Centre()
+
+    def ShowModal(self) -> int:
+        return self._dialog.ShowModal()
+
+    def Destroy(self) -> None:
+        self._dialog.Destroy()
+
+
+class MessageDetailsDialog:
+    def __init__(
+        self,
+        parent,
+        lead: str,
+        detail: str,
+        palette: Optional[LauncherPalette] = None,
+    ) -> None:
+        wxmod = _wx()
+        self._dialog = wxmod.Dialog(
+            parent,
+            title="LabGym Launcher",
+            style=wxmod.DEFAULT_DIALOG_STYLE | wxmod.RESIZE_BORDER,
+        )
+        root = wxmod.BoxSizer(wxmod.VERTICAL)
+        lead_ctrl = wxmod.StaticText(self._dialog, label=lead)
+        self.lead_ctrl = lead_ctrl
+        root.Add(lead_ctrl, 0, wxmod.ALL | wxmod.EXPAND, 10)
+        diag_label = wxmod.StaticText(self._dialog, label=DIAGNOSTIC_OUTPUT_LABEL)
+        diag_label.SetName(SECONDARY_WIDGET_NAME)
+        root.Add(diag_label, 0, wxmod.LEFT | wxmod.RIGHT | wxmod.EXPAND, 10)
+        box = wxmod.TextCtrl(
+            self._dialog,
+            value=detail,
+            style=wxmod.TE_MULTILINE | wxmod.TE_READONLY | wxmod.BORDER_SIMPLE | wxmod.HSCROLL,
+        )
+        box.SetMinSize((640, 220))
+        self.details_ctrl = box
+        root.Add(box, 1, wxmod.LEFT | wxmod.RIGHT | wxmod.BOTTOM | wxmod.EXPAND, 10)
+        root.Add(
+            self._dialog.CreateButtonSizer(wxmod.OK),
+            0,
+            wxmod.LEFT | wxmod.RIGHT | wxmod.BOTTOM | wxmod.ALIGN_RIGHT,
+            10,
+        )
+        self._dialog.SetSizerAndFit(root)
+        wrap_width = self._dialog.GetClientSize().GetWidth() - 40
+        if wrap_width < 360:
+            wrap_width = 600
+        lead_ctrl.Wrap(wrap_width)
+        self._dialog.Fit()
+        apply_theme(self._dialog, _dialog_palette(palette))
         if parent:
             self._dialog.CentreOnParent()
         else:
@@ -666,9 +748,20 @@ class LauncherFrame:
         self._update_action_enablement()
         self.activity_ctrl.SetLabel("")
 
-    def _show_error(self, message: str) -> None:
+    def _show_error(self, message: str, detail: Optional[str] = None) -> None:
         wxmod = _wx()
-        wxmod.MessageBox(message, "LabGym Launcher", wxmod.OK | wxmod.ICON_ERROR, self._frame)
+        if detail:
+            dialog = MessageDetailsDialog(
+                self._frame, message, detail, palette=self.palette
+            )
+            try:
+                dialog.ShowModal()
+            finally:
+                dialog.Destroy()
+        else:
+            wxmod.MessageBox(
+                message, "LabGym Launcher", wxmod.OK | wxmod.ICON_ERROR, self._frame
+            )
         self.refresh_status()
 
     def _show_info(self, message: str) -> None:
@@ -691,7 +784,8 @@ class LauncherFrame:
 
     def _on_background_error(self, exc: BaseException) -> None:
         self._set_working(False)
-        self._show_error(gui_error_text(exc))
+        lead, detail = gui_error_parts(exc)
+        self._show_error(lead, detail)
 
     def _begin_select(self, selector: Callable, launch: bool) -> None:
         if self._working:
@@ -733,7 +827,12 @@ class LauncherFrame:
 
     def _after_prepare(self, confirmation, launch: bool) -> None:
         wxmod = _wx()
-        dialog = ConfirmationDialog(self._frame, confirmation_display(confirmation))
+        dialog = ConfirmationDialog(
+            self._frame,
+            confirmation_display(confirmation),
+            action=confirmation.action,
+            palette=self.palette,
+        )
         try:
             result = dialog.ShowModal()
             approved = result == wxmod.ID_OK
@@ -803,7 +902,9 @@ class LauncherFrame:
         self.refresh_status()
 
     def on_details(self, event) -> None:
-        dialog = StatusDetailsDialog(self._frame, self._status_details)
+        dialog = StatusDetailsDialog(
+            self._frame, self._status_details, palette=self.palette
+        )
         try:
             dialog.ShowModal()
         finally:
@@ -839,6 +940,7 @@ class LauncherFrame:
             item.source_repo,
             item.commit,
             item.alias or "",
+            palette=self.palette,
         )
         try:
             result = dialog.ShowModal()

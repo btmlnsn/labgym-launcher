@@ -91,12 +91,16 @@ class ConfirmationDialogWxTests(unittest.TestCase):
             frame = wx.Frame(None)
             dialog = ConfirmationDialog(
                 frame,
-                "LabGym Launcher confirmation\nResolved: 3.0.1\nlabgym: 3.0.0 -> 3.0.1",
+                "Action: Official Release\nResolved: 3.0.1\nlabgym: 3.0.0 -> 3.0.1",
             )
             try:
                 window, parents = dialog.widget_parents()
                 dialog._dialog.Layout()
-                self.assertTrue(dialog.details_ctrl.GetValue().startswith("LabGym Launcher confirmation"))
+                self.assertTrue(dialog.details_ctrl.GetValue().startswith("Action: Official Release"))
+                ok_button = dialog._dialog.FindWindowById(wx.ID_OK)
+                self.assertEqual(ok_button.GetLabel(), "Install")
+                self.assertIn("before installing", dialog.intro_ctrl.GetLabel())
+                self.assertNotIn("LabGym will not be launched", dialog.intro_ctrl.GetLabel())
                 for name, parent in parents.items():
                     self.assertIsNotNone(parent, msg="%s has no parent" % name)
                     self.assertEqual(
@@ -108,6 +112,38 @@ class ConfirmationDialogWxTests(unittest.TestCase):
                         parent.IsSameAs(window),
                         msg="%s parent is not the dialog" % name,
                     )
+            finally:
+                dialog.Destroy()
+                frame.Destroy()
+        finally:
+            app.Destroy()
+
+    def test_restore_confirmation_uses_restore_button_and_copy(self) -> None:
+        wx = _require_wx()
+        from labgym_launcher.gui import ConfirmationDialog
+        from labgym_launcher.theme import DARK_PALETTE
+
+        app = _wx_app(wx)
+        try:
+            frame = wx.Frame(None)
+            dialog = ConfirmationDialog(
+                frame,
+                "Action: Restore Official Release\nLabGym will launch: no",
+                action="rollback",
+                palette=DARK_PALETTE,
+            )
+            try:
+                ok_button = dialog._dialog.FindWindowById(wx.ID_OK)
+                self.assertEqual(ok_button.GetLabel(), "Restore")
+                intro = dialog.intro_ctrl.GetLabel().replace("\n", " ")
+                self.assertIn("before restoring", intro)
+                self.assertNotIn("before installing", intro)
+                self.assertIn("LabGym will not be launched", intro)
+                dialog_bg = dialog._dialog.GetBackgroundColour()
+                self.assertEqual(
+                    (dialog_bg.Red(), dialog_bg.Green(), dialog_bg.Blue()),
+                    DARK_PALETTE.window_bg,
+                )
             finally:
                 dialog.Destroy()
                 frame.Destroy()

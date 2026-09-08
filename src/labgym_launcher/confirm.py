@@ -75,46 +75,75 @@ def format_selected_commit_html(
     return "<div>%s</div>" % "<br>".join(headed)
 
 
+def confirmation_target(confirmation: Confirmation) -> str:
+    if confirmation.action == DEMO:
+        return confirmation.requested or confirmation.resolved
+    version = confirmation.pypi_version or confirmation.resolved
+    return "%s %s" % (OFFICIAL_RELEASE_LABEL, version)
+
+
+def _dependencies_will_change(confirmation: Confirmation) -> str:
+    return "yes" if confirmation.needs_install else "no"
+
+
+def _labgym_will_launch(confirmation: Confirmation) -> str:
+    return "no" if confirmation.action == ROLLBACK else "yes"
+
+
 def format_confirmation(confirmation: Confirmation) -> str:
-    lines = [
-        "LabGym Launcher confirmation",
+    summary = [
         "Action: %s" % display_action(confirmation.action),
-        "Requested: %s" % confirmation.requested,
+        "Target: %s" % confirmation_target(confirmation),
         "Source repo: %s" % confirmation.source_repo,
-        "Resolved: %s" % confirmation.resolved,
-        "Commit: %s" % (confirmation.commit or "none"),
     ]
     if confirmation.action == DEMO:
-        lines.append("Branch: %s" % display_branch(confirmation.branch_name))
-        lines.append(
+        summary.append("Commit: %s" % (confirmation.commit or "none"))
+    else:
+        summary.append("PyPI version: %s" % (confirmation.pypi_version or "none"))
+        summary.append("Commit: %s" % (confirmation.commit or "none"))
+    summary.extend(
+        [
+            "Dependencies will change: %s" % _dependencies_will_change(confirmation),
+            "LabGym will launch: %s" % _labgym_will_launch(confirmation),
+        ]
+    )
+    details = [
+        "",
+        "Details",
+        "Requested: %s" % confirmation.requested,
+        "Resolved: %s" % confirmation.resolved,
+    ]
+    if confirmation.action == DEMO:
+        details.append("Branch: %s" % display_branch(confirmation.branch_name))
+        details.append(
             "Message: %s"
             % ((confirmation.commit_subject or "").strip() or "none")
         )
-    lines.extend(
+        details.append("PyPI version: %s" % (confirmation.pypi_version or "none"))
+    details.extend(
         [
-            "PyPI version: %s" % (confirmation.pypi_version or "none"),
             "Checkout: %s" % confirmation.checkout_path,
             "Install spec: %s" % confirmation.pip_spec,
             "Current LabGym: %s" % (confirmation.current_labgym or "not installed"),
             "Current source: %s" % (confirmation.current_source or "unknown"),
             "Install required: %s" % ("yes" if confirmation.needs_install else "no"),
             "",
-            "Dependency comparison (current environment vs selected version):",
+            "Dependency comparison (current vs selected):",
         ]
     )
     if confirmation.changes:
         for change in confirmation.changes:
             current = change.current or "not installed"
             planned = change.planned or "not in plan"
-            lines.append(
+            details.append(
                 "  %s: %s -> %s (%s)" % (change.name, current, planned, change.action)
             )
     else:
-        lines.append("  no pip-reported package changes")
+        details.append("  none listed")
     if confirmation.notes:
-        lines.append("")
-        lines.extend(confirmation.notes)
-    return "\n".join(lines)
+        details.append("")
+        details.extend(confirmation.notes)
+    return "\n".join(summary + details)
 
 
 def format_status(status: LauncherStatus) -> str:

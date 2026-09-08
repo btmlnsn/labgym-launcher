@@ -177,13 +177,24 @@ class LauncherBackend:
             branch_name=branch_name,
             commit_subject=metadata.subject,
             extra_notes=(
-                "A selected commit retargets the same persistent checkout; a new clone is not created per commit.",
+                "A Selected Commit retargets the same persistent checkout; a new clone is not created per commit.",
             ),
         )
 
     def prepare_rollback(self) -> Confirmation:
         LOGGER.info("preparing rollback to home")
         confirmation = self.prepare_home()
+        extra = tuple(
+            note
+            for note in confirmation.notes
+            if note.startswith("The Official Release uses")
+        )
+        notes = self._confirmation_notes(
+            ROLLBACK,
+            extra,
+            confirmation.needs_install,
+            confirmation.changes,
+        )
         return Confirmation(
             action=ROLLBACK,
             requested=HOME,
@@ -197,7 +208,7 @@ class LauncherBackend:
             current_source=confirmation.current_source,
             changes=confirmation.changes,
             needs_install=confirmation.needs_install,
-            notes=confirmation.notes,
+            notes=notes,
             branch_name=confirmation.branch_name,
             commit_subject=confirmation.commit_subject,
         )
@@ -493,6 +504,26 @@ class LauncherBackend:
             return False
         return Path(left) == Path(right)
 
+    def _confirmation_notes(
+        self,
+        action: str,
+        extra_notes: Tuple[str, ...],
+        needs_install: bool,
+        changes: Tuple[DepChange, ...],
+    ) -> Tuple[str, ...]:
+        notes = list(extra_notes)
+        if needs_install and all(change.action == "unchanged" for change in changes):
+            notes.insert(0, "Install is still required to switch the LabGym source.")
+        notes.append("Packages not listed stay as they are.")
+        if action == ROLLBACK:
+            notes.append("Restore Official Release does not launch LabGym.")
+        else:
+            notes.append(
+                "LabGym will not be launched if the hash cannot be resolved or install fails."
+            )
+        notes.append("Restore Official Release remains available.")
+        return tuple(notes)
+
     def _prepare(
         self,
         action: str,
@@ -521,13 +552,9 @@ class LauncherBackend:
             changes=changes,
             planned=planned,
         )
-        notes = list(extra_notes) + [
-            "Packages not listed stay as they are in this stage.",
-            "LabGym will not be launched if the hash cannot be resolved or install fails.",
-            "Restore Official Release remains available.",
-        ]
-        if needs_install and all(change.action == "unchanged" for change in changes):
-            notes.insert(0, "Install is still required to switch the LabGym source.")
+        notes = self._confirmation_notes(
+            action, extra_notes, needs_install, changes
+        )
         confirmation = Confirmation(
             action=action,
             requested=requested,

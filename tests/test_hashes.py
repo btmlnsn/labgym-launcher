@@ -18,6 +18,7 @@ class HashFormatTests(unittest.TestCase):
                 with self.assertRaises(InvalidHashError) as raised:
                     validate_hash_format(value)
                 self.assertIn("not a git commit hash", str(raised.exception))
+                self.assertIn("Selected commit", str(raised.exception))
                 self.assertIn("Current environment was not changed", str(raised.exception))
 
 

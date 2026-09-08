@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 from labgym_launcher.backend import LauncherBackend
 from labgym_launcher.confirm import (
@@ -7,7 +7,7 @@ from labgym_launcher.confirm import (
     shorten_commit,
 )
 from labgym_launcher.constants import DEMO, HOME, ROLLBACK
-from labgym_launcher.errors import LauncherError
+from labgym_launcher.errors import InstallFailedError, LauncherError
 from labgym_launcher.models import Confirmation, Selection
 from labgym_launcher.recent import normalize_alias, record_recent
 from labgym_launcher.sessions import session_class_for_action
@@ -45,6 +45,29 @@ GUI_EMPTY_COMMIT_ERROR = (
     "Current environment was not changed."
 )
 REMOVE_REMEMBERED_TITLE = "Remove remembered commit"
+DIAGNOSTIC_OUTPUT_LABEL = "Diagnostic output:"
+RESTORE_INTRO = (
+    "Review the Official Release target and dependency changes before restoring. "
+    "Nothing is changed until you confirm. LabGym will not be launched."
+)
+INSTALL_INTRO = (
+    "Review the target and dependency changes before installing. "
+    "Nothing is installed until you confirm."
+)
+RESTORE_OK_LABEL = "Restore"
+INSTALL_OK_LABEL = "Install"
+
+
+def confirmation_intro(action: str) -> str:
+    if action == ROLLBACK:
+        return RESTORE_INTRO
+    return INSTALL_INTRO
+
+
+def confirmation_ok_label(action: str) -> str:
+    if action == ROLLBACK:
+        return RESTORE_OK_LABEL
+    return INSTALL_OK_LABEL
 
 
 def prepare_home(backend: LauncherBackend) -> Confirmation:
@@ -237,17 +260,61 @@ def remove_remembered_confirm_text(
     )
 
 
-def gui_error_text(exc: BaseException) -> str:
+def gui_error_parts(exc: BaseException) -> Tuple[str, Optional[str]]:
     if not isinstance(exc, LauncherError):
-        return "Unexpected launcher error: %s" % exc
+        return ("Unexpected launcher error: %s" % exc, None)
     text = str(exc)
     if (
         CLI_DEMO_USAGE in text
         or "A selected commit hash is required." in text
         or "without a commit hash" in text
     ):
-        return GUI_EMPTY_COMMIT_ERROR
-    return text
+        return (GUI_EMPTY_COMMIT_ERROR, None)
+    if isinstance(exc, InstallFailedError):
+        return _install_failed_gui_parts(text)
+    lead, detail = _split_git_diagnostic(text)
+    return (_title_case_selected_commit(lead), detail)
+
+
+def gui_error_text(exc: BaseException) -> str:
+    lead, detail = gui_error_parts(exc)
+    if not detail:
+        return lead
+    return "%s\n\n%s\n%s" % (lead, DIAGNOSTIC_OUTPUT_LABEL, detail)
+
+
+def _title_case_selected_commit(text: str) -> str:
+    return text.replace("Selected commit", "Selected Commit", 1)
+
+
+def _split_git_diagnostic(text: str) -> Tuple[str, Optional[str]]:
+    for marker in ("\ngit: ", " git: ", "\ngit returned ", " git returned "):
+        index = text.find(marker)
+        if index != -1:
+            return (text[:index].strip(), text[index:].strip())
+    return (text, None)
+
+
+def _install_failed_gui_parts(text: str) -> Tuple[str, Optional[str]]:
+    lead_first = "Dependency installation failed. LabGym was not launched."
+    restored = "Previous environment snapshot was restored."
+    mixed_start = "Restoring the previous snapshot also failed."
+    if not text.startswith(lead_first):
+        return (text, None)
+    rest = text[len(lead_first) :].lstrip("\n")
+    restored_at = rest.find(restored)
+    if restored_at != -1:
+        pip_part = rest[:restored_at].strip()
+        return ("%s\n%s" % (lead_first, restored), pip_part or None)
+    mixed_at = rest.find(mixed_start)
+    if mixed_at != -1:
+        pip_part = rest[:mixed_at].strip()
+        mixed_and_restore = rest[mixed_at:]
+        mixed_line, _, restore_err = mixed_and_restore.partition("\n")
+        lead = "%s\n%s" % (lead_first, mixed_line.strip())
+        detail = "\n".join(part for part in (pip_part, restore_err.strip()) if part)
+        return (lead, detail or None)
+    return (lead_first, rest or None)
 
 
 def confirmation_display(confirmation: Confirmation) -> str:

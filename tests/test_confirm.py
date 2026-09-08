@@ -33,9 +33,17 @@ class ConfirmFormatTests(unittest.TestCase):
             commit_subject="Add selected-commit UI",
         )
         text = format_confirmation(confirmation)
-        self.assertIn("Action: Selected Commit", text)
+        self.assertTrue(text.startswith("Action: Selected Commit"))
+        self.assertLess(text.index("Action: Selected Commit"), text.index("\nDetails\n"))
+        self.assertLess(text.index("Target: abc1"), text.index("\nDetails\n"))
+        self.assertLess(
+            text.index("Dependencies will change: yes"), text.index("\nDetails\n")
+        )
+        self.assertLess(text.index("LabGym will launch: yes"), text.index("\nDetails\n"))
+        self.assertLess(text.index("LabGym will launch:"), text.index("Checkout:"))
+        self.assertIn("Source repo: alice/LabGym", text.split("Details")[0])
+        self.assertIn("Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", text.split("Details")[0])
         self.assertIn("Requested: abc1", text)
-        self.assertIn("Source repo: alice/LabGym", text)
         self.assertIn("Checkout: /tmp/demo", text)
         self.assertIn("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", text)
         self.assertIn("Branch: demo-branch", text)
@@ -43,6 +51,9 @@ class ConfirmFormatTests(unittest.TestCase):
         self.assertIn("labgym: 3.0.0 -> 3.0.1 (change)", text)
         self.assertIn("Install required: yes", text)
         self.assertIn("Restore Official Release remains available.", text)
+        self.assertNotIn("pip-reported", text)
+        self.assertNotIn("in this stage", text)
+        self.assertNotIn("LabGym Launcher confirmation\n", text)
 
     def test_official_release_action_is_capitalized(self) -> None:
         confirmation = Confirmation(
@@ -62,7 +73,33 @@ class ConfirmFormatTests(unittest.TestCase):
         )
         text = format_confirmation(confirmation)
         self.assertEqual(OFFICIAL_RELEASE_LABEL, "Official Release")
-        self.assertIn("Action: Official Release", text)
+        self.assertTrue(text.startswith("Action: Official Release"))
+        self.assertIn("PyPI version: 3.0.1", text.split("Details")[0])
+        self.assertIn("LabGym will launch: yes", text.split("Details")[0])
+        self.assertIn("none listed", text)
+        self.assertNotIn("pip-reported", text)
+
+    def test_restore_confirmation_says_labgym_will_not_launch(self) -> None:
+        confirmation = Confirmation(
+            action="rollback",
+            requested="home",
+            resolved="3.0.1",
+            pip_spec="/tmp/home",
+            source_repo="umyelab/LabGym",
+            checkout_path="/tmp/home",
+            commit="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            pypi_version="3.0.1",
+            current_labgym="3.0.0",
+            current_source="LabGym==3.0.0",
+            changes=(),
+            needs_install=True,
+            notes=("Restore Official Release does not launch LabGym.",),
+        )
+        text = format_confirmation(confirmation)
+        self.assertTrue(text.startswith("Action: Restore Official Release"))
+        self.assertIn("LabGym will launch: no", text.split("Details")[0])
+        self.assertNotIn("LabGym will launch: yes", text)
+        self.assertIn("Restore Official Release does not launch LabGym.", text)
 
     def test_selected_commit_label_is_compact_two_lines(self) -> None:
         label = format_selected_commit_label(
