@@ -15,6 +15,7 @@ from labgym_launcher.theme import (
     DARK_PALETTE,
     LIGHT_PALETTE,
     contrast_ratio,
+    recent_item_fill,
     rgb_to_hex,
 )
 
@@ -309,11 +310,11 @@ class LauncherFrameWxTests(unittest.TestCase):
                 app.Yield(True)
                 min_list = frame.recent_list.GetSize().GetHeight()
                 aliased = frame.recent_list.GetItemRect(0)
-                compact = frame.recent_list.GetItemRect(1)
-                self.assertGreaterEqual(min_list, aliased.GetHeight())
                 self.assertGreaterEqual(
                     min_list,
-                    min(compact.GetHeight() * 2, aliased.GetHeight() + compact.GetHeight()),
+                    aliased.GetHeight(),
+                    "minimum window must show one full aliased remembered row; "
+                    "GTK chrome may leave less list height than macOS",
                 )
                 self.assertEqual(
                     (frame._frame.GetSize().GetWidth(), frame._frame.GetSize().GetHeight()),
@@ -376,17 +377,15 @@ class LauncherFrameWxTests(unittest.TestCase):
                     (window_bg.Red(), window_bg.Green(), window_bg.Blue()),
                     DARK_PALETTE.window_bg,
                 )
-                for button in (
-                    frame.home_btn,
-                    frame.demo_btn,
-                    frame.rollback_btn,
-                    frame.refresh_btn,
-                ):
-                    button_bg = button.GetBackgroundColour()
-                    self.assertNotEqual(
-                        (button_bg.Red(), button_bg.Green(), button_bg.Blue()),
-                        DARK_PALETTE.panel_bg,
-                    )
+                list_bg = frame.recent_list.GetBackgroundColour()
+                self.assertEqual(
+                    (list_bg.Red(), list_bg.Green(), list_bg.Blue()),
+                    DARK_PALETTE.recent_item_bg,
+                )
+                self.assertEqual(
+                    recent_item_fill(DARK_PALETTE, 0, True),
+                    DARK_PALETTE.selected_row_bg,
+                )
                 self.assertIs(frame.home_btn.GetParent(), frame.target_box)
                 self.assertIs(frame.demo_btn.GetParent(), frame.target_box)
                 self.assertIs(frame.rollback_btn.GetParent(), frame.window_panel)
