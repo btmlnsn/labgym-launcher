@@ -139,9 +139,9 @@ def format_status(status: LauncherStatus) -> str:
             "Installed source: %s" % (status.installed_source or "unknown"),
             "Active checkout: %s" % (status.checkout_path or "none"),
             "Official Release checkout: %s" % status.home_checkout,
-            "Selected commit checkout: %s" % status.demo_checkout,
+            "Selected Commit checkout: %s" % status.demo_checkout,
             "Data dir: %s" % status.data_dir,
-            "Rollback to Official Release: %s"
+            "Restore Official Release: %s"
             % ("available" if status.rollback_available else "unavailable"),
             "Official Release session: %s"
             % ("running" if status.official_session_active else "not running"),

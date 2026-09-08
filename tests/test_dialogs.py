@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from labgym_launcher.gui import (
     FRAME_MIN_SIZE,
@@ -46,16 +47,20 @@ class ConfirmationParentPlanTests(unittest.TestCase):
 
 
 class PrimaryActionLabelTests(unittest.TestCase):
-    def test_selected_commit_button_omits_launch(self) -> None:
+    def test_launch_buttons_use_launch_prefix(self) -> None:
         labels = primary_action_labels()
-        self.assertEqual(labels["official_release"], "Official Release")
-        self.assertEqual(labels["selected_commit"], "Selected Commit")
-        self.assertNotIn("Launch", labels["selected_commit"])
+        self.assertEqual(labels["official_release"], "Launch Official Release")
+        self.assertEqual(labels["selected_commit"], "Launch Selected Commit")
+        self.assertEqual(labels["restore_official_release"], "Restore Official Release")
+        self.assertEqual(labels["refresh"], "Refresh")
+        self.assertIn("Launch", labels["selected_commit"])
 
     def test_recent_list_has_explicit_load_action(self) -> None:
         labels = recent_action_labels()
-        self.assertEqual(labels["load_selected_commit"], "Load Selected Commit")
-        self.assertEqual(LOAD_SELECTED_COMMIT_LABEL, "Load Selected Commit")
+        self.assertEqual(labels["load_target"], "Load Target")
+        self.assertEqual(labels["edit_alias"], "Edit Alias")
+        self.assertEqual(labels["remove"], "Remove")
+        self.assertEqual(LOAD_SELECTED_COMMIT_LABEL, "Load Target")
 
 
 class SelectionPaletteTests(unittest.TestCase):
@@ -136,16 +141,31 @@ class LauncherFrameWxTests(unittest.TestCase):
                 self.assertEqual((size.GetWidth(), size.GetHeight()), FRAME_START_SIZE)
                 min_size = frame._frame.GetMinSize()
                 self.assertEqual((min_size.GetWidth(), min_size.GetHeight()), FRAME_MIN_SIZE)
-                self.assertEqual(frame.home_btn.GetLabel(), "Official Release")
-                self.assertEqual(frame.demo_btn.GetLabel(), "Selected Commit")
-                self.assertNotIn("Launch", frame.demo_btn.GetLabel())
-                self.assertIs(frame.home_btn.GetParent(), frame.window_panel)
-                self.assertIs(frame.demo_btn.GetParent(), frame.window_panel)
+                self.assertEqual(frame.home_btn.GetLabel(), "Launch Official Release")
+                self.assertEqual(frame.demo_btn.GetLabel(), "Launch Selected Commit")
+                self.assertIn("Launch", frame.demo_btn.GetLabel())
+                self.assertEqual(frame.rollback_btn.GetLabel(), "Restore Official Release")
+                self.assertEqual(frame.refresh_btn.GetLabel(), "Refresh")
+                self.assertEqual(frame.session_box.GetLabel(), "Current State")
+                self.assertEqual(frame.target_box.GetLabel(), "Launch Target")
+                self.assertEqual(frame.recent_box.GetLabel(), "Remembered Commits")
+                self.assertEqual(frame.purpose_ctrl.GetLabel().replace("\n", " "), (
+                    "Launch the Official Release or a Selected Commit. "
+                    "One session of each kind may run at the same time."
+                ))
+                self.assertIs(frame.home_btn.GetParent(), frame.target_box)
+                self.assertIs(frame.demo_btn.GetParent(), frame.target_box)
                 self.assertIs(frame.rollback_btn.GetParent(), frame.window_panel)
                 self.assertIs(frame.refresh_btn.GetParent(), frame.window_panel)
                 self.assertEqual(frame.window_panel.GetName(), WINDOW_PANEL_NAME)
                 self.assertEqual(frame.details_btn.GetLabel(), "Details")
-                self.assertEqual(frame.load_recent_btn.GetLabel(), "Load Selected Commit")
+                self.assertEqual(frame.load_recent_btn.GetLabel(), "Load Target")
+                self.assertEqual(frame.edit_recent_btn.GetLabel(), "Edit Alias")
+                self.assertEqual(frame.remove_recent_btn.GetLabel(), "Remove")
+                self.assertFalse(frame.demo_btn.IsEnabled())
+                self.assertFalse(frame.load_recent_btn.IsEnabled())
+                self.assertFalse(frame.edit_recent_btn.IsEnabled())
+                self.assertFalse(frame.remove_recent_btn.IsEnabled())
                 icon_path = get_frame_icon_path()
                 self.assertTrue(icon_path)
                 self.assertTrue(Path(icon_path).is_file())
@@ -162,7 +182,10 @@ class LauncherFrameWxTests(unittest.TestCase):
                 self.assertIn("desired GitHub commit hash", frame.target_hint.GetLabel())
                 self.assertNotIn("unique commit hash", frame.target_hint.GetLabel())
                 session = frame.session_ctrl.GetValue()
-                self.assertLessEqual(len(session.splitlines()), 2)
+                self.assertEqual(len(session.splitlines()), 4)
+                self.assertIn("Installed:", session)
+                self.assertIn("Official Release session:", session)
+                self.assertIn("Selected Commit session:", session)
                 self.assertNotIn("Active checkout:", session)
                 self.assertNotIn("Data dir:", session)
                 self.assertNotIn("LabGym Launcher status", session)
@@ -237,6 +260,79 @@ class LauncherFrameWxTests(unittest.TestCase):
             app.Destroy()
             temp.cleanup()
 
+    def test_layout_shows_remembered_rows_at_min_and_default(self) -> None:
+        wx = _require_wx()
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from labgym_launcher.backend import LauncherBackend
+        from labgym_launcher.gui import (
+            FRAME_MIN_SIZE,
+            FRAME_START_SIZE,
+            LauncherFrame,
+            RECENT_LIST_MIN_HEIGHT,
+        )
+        from labgym_launcher.recent import RecentDemo
+        from fakes import DEMO_SHA, FakeRunner
+
+        temp = TemporaryDirectory()
+        app = _wx_app(wx)
+        try:
+            backend = LauncherBackend(
+                data_dir=Path(temp.name),
+                runner=FakeRunner(),
+                python="python",
+                fetch_pypi_version=lambda: "3.0.1",
+            )
+            frame = LauncherFrame(backend=backend)
+            try:
+                frame.recent = [
+                    RecentDemo(
+                        "alice/LabGym",
+                        DEMO_SHA,
+                        subject="Add selected-commit UI",
+                        alias="Courtship demo",
+                    ),
+                    RecentDemo("bob/LabGym", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", subject="No alias here"),
+                ]
+                frame.refresh_recent_list()
+                frame._frame.Show()
+                app.Yield(True)
+                default_list = frame.recent_list.GetSize().GetHeight()
+                self.assertGreaterEqual(default_list, RECENT_LIST_MIN_HEIGHT)
+                aliased = frame.recent_list.GetItemRect(0)
+                compact = frame.recent_list.GetItemRect(1)
+                self.assertGreaterEqual(default_list, aliased.GetHeight() + compact.GetHeight())
+
+                frame._frame.SetSize(FRAME_MIN_SIZE)
+                frame._frame.Layout()
+                app.Yield(True)
+                min_list = frame.recent_list.GetSize().GetHeight()
+                aliased = frame.recent_list.GetItemRect(0)
+                compact = frame.recent_list.GetItemRect(1)
+                self.assertGreaterEqual(min_list, aliased.GetHeight())
+                self.assertGreaterEqual(
+                    min_list,
+                    min(compact.GetHeight() * 2, aliased.GetHeight() + compact.GetHeight()),
+                )
+                self.assertEqual(
+                    (frame._frame.GetSize().GetWidth(), frame._frame.GetSize().GetHeight()),
+                    FRAME_MIN_SIZE,
+                )
+                self.assertEqual(
+                    (frame._frame.GetMinSize().GetWidth(), frame._frame.GetMinSize().GetHeight()),
+                    FRAME_MIN_SIZE,
+                )
+                self.assertEqual(
+                    (FRAME_START_SIZE[0], FRAME_START_SIZE[1]),
+                    (860, 720),
+                )
+            finally:
+                frame._frame.Destroy()
+        finally:
+            app.Destroy()
+            temp.cleanup()
+
     def test_forced_dark_palette_is_applied_to_recent_list(self) -> None:
         wx = _require_wx()
         from pathlib import Path
@@ -286,12 +382,15 @@ class LauncherFrameWxTests(unittest.TestCase):
                     frame.rollback_btn,
                     frame.refresh_btn,
                 ):
-                    self.assertIs(button.GetParent(), frame.window_panel)
                     button_bg = button.GetBackgroundColour()
                     self.assertNotEqual(
                         (button_bg.Red(), button_bg.Green(), button_bg.Blue()),
                         DARK_PALETTE.panel_bg,
                     )
+                self.assertIs(frame.home_btn.GetParent(), frame.target_box)
+                self.assertIs(frame.demo_btn.GetParent(), frame.target_box)
+                self.assertIs(frame.rollback_btn.GetParent(), frame.window_panel)
+                self.assertIs(frame.refresh_btn.GetParent(), frame.window_panel)
             finally:
                 frame._frame.Destroy()
         finally:
@@ -373,7 +472,7 @@ class AliasDialogWxTests(unittest.TestCase):
                 "Courtship demo",
             )
             try:
-                self.assertEqual(dialog._dialog.GetTitle(), "Edit alias")
+                self.assertEqual(dialog._dialog.GetTitle(), "Edit Alias")
                 self.assertEqual(dialog.source_ctrl.GetValue(), "alice/LabGym")
                 self.assertEqual(dialog.commit_ctrl.GetValue(), DEMO_SHA)
                 self.assertFalse(dialog.source_ctrl.IsEditable())
@@ -447,6 +546,166 @@ class AliasDialogWxTests(unittest.TestCase):
                 self.assertEqual(len(saved), 1)
                 self.assertIsNone(saved[0].alias)
                 self.assertEqual(saved[0].commit, DEMO_SHA)
+            finally:
+                frame._frame.Destroy()
+        finally:
+            app.Destroy()
+            temp.cleanup()
+
+
+class EnablementWxTests(unittest.TestCase):
+    def _frame(self, wxmod):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from labgym_launcher.backend import LauncherBackend
+        from labgym_launcher.gui import LauncherFrame
+        from fakes import FakeRunner
+
+        temp = TemporaryDirectory()
+        backend = LauncherBackend(
+            data_dir=Path(temp.name),
+            runner=FakeRunner(),
+            python="python",
+            fetch_pypi_version=lambda: "3.0.1",
+        )
+        frame = LauncherFrame(backend=backend)
+        return temp, frame
+
+    def test_launch_selected_commit_disabled_for_blank_and_whitespace(self) -> None:
+        wx = _require_wx()
+        app = _wx_app(wx)
+        temp, frame = self._frame(wx)
+        try:
+            self.assertFalse(frame.demo_btn.IsEnabled())
+            frame.commit_ctrl.SetValue("   ")
+            frame._update_action_enablement()
+            self.assertFalse(frame.demo_btn.IsEnabled())
+            frame.commit_ctrl.SetValue("abc1def")
+            frame._update_action_enablement()
+            self.assertTrue(frame.demo_btn.IsEnabled())
+            frame.commit_ctrl.SetValue("master")
+            frame._update_action_enablement()
+            self.assertTrue(frame.demo_btn.IsEnabled())
+            frame.commit_ctrl.SetValue("")
+            frame._update_action_enablement()
+            self.assertFalse(frame.demo_btn.IsEnabled())
+        finally:
+            frame._frame.Destroy()
+            app.Destroy()
+            temp.cleanup()
+
+    def test_remembered_actions_disabled_without_selection(self) -> None:
+        wx = _require_wx()
+        from labgym_launcher.recent import RecentDemo
+        from fakes import DEMO_SHA
+
+        app = _wx_app(wx)
+        temp, frame = self._frame(wx)
+        try:
+            self.assertFalse(frame.load_recent_btn.IsEnabled())
+            self.assertFalse(frame.edit_recent_btn.IsEnabled())
+            self.assertFalse(frame.remove_recent_btn.IsEnabled())
+            frame.recent = [RecentDemo("alice/LabGym", DEMO_SHA, subject="Add UI")]
+            frame.refresh_recent_list()
+            self.assertEqual(frame.recent_list.GetSelection(), 0)
+            self.assertTrue(frame.load_recent_btn.IsEnabled())
+            self.assertTrue(frame.edit_recent_btn.IsEnabled())
+            self.assertTrue(frame.remove_recent_btn.IsEnabled())
+            frame.recent_list.SetSelection(wx.NOT_FOUND)
+            frame._update_action_enablement()
+            self.assertFalse(frame.load_recent_btn.IsEnabled())
+            self.assertFalse(frame.edit_recent_btn.IsEnabled())
+            self.assertFalse(frame.remove_recent_btn.IsEnabled())
+        finally:
+            frame._frame.Destroy()
+            app.Destroy()
+            temp.cleanup()
+
+    def test_gated_buttons_stay_disabled_after_working_false(self) -> None:
+        wx = _require_wx()
+        app = _wx_app(wx)
+        temp, frame = self._frame(wx)
+        try:
+            self.assertFalse(frame.demo_btn.IsEnabled())
+            self.assertFalse(frame.load_recent_btn.IsEnabled())
+            frame._set_working(True, "Working... checking the requested target.")
+            self.assertFalse(frame.demo_btn.IsEnabled())
+            self.assertFalse(frame.home_btn.IsEnabled())
+            frame._set_working(False)
+            self.assertTrue(frame.home_btn.IsEnabled())
+            self.assertFalse(frame.demo_btn.IsEnabled())
+            self.assertFalse(frame.load_recent_btn.IsEnabled())
+            self.assertFalse(frame.edit_recent_btn.IsEnabled())
+            self.assertFalse(frame.remove_recent_btn.IsEnabled())
+        finally:
+            frame._frame.Destroy()
+            app.Destroy()
+            temp.cleanup()
+
+
+class RemoveConfirmWxTests(unittest.TestCase):
+    def test_remove_dialog_copy_and_cancel_vs_confirm(self) -> None:
+        wx = _require_wx()
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from labgym_launcher.backend import LauncherBackend
+        from labgym_launcher.gui import LauncherFrame
+        from labgym_launcher.gui_flow import REMOVE_REMEMBERED_TITLE
+        from labgym_launcher.recent import RecentDemo, load_recent
+        from fakes import DEMO_SHA, FakeRunner
+
+        temp = TemporaryDirectory()
+        app = _wx_app(wx)
+        try:
+            backend = LauncherBackend(
+                data_dir=Path(temp.name),
+                runner=FakeRunner(),
+                python="python",
+                fetch_pypi_version=lambda: "3.0.1",
+            )
+            frame = LauncherFrame(backend=backend)
+            try:
+                item = RecentDemo(
+                    "alice/LabGym",
+                    DEMO_SHA,
+                    subject="Add UI",
+                    alias="Courtship demo",
+                )
+                frame.recent = [item]
+                frame.refresh_recent_list()
+                dialog = frame._make_remove_remembered_dialog(item)
+                try:
+                    self.assertEqual(dialog.GetTitle(), REMOVE_REMEMBERED_TITLE)
+                    message = dialog.GetMessage()
+                    self.assertIn("Remove this remembered commit from the list?", message)
+                    self.assertIn('Remembered entry: "Courtship demo"', message)
+                    self.assertIn(
+                        "This does not uninstall LabGym or change the current environment.",
+                        message,
+                    )
+                    if hasattr(dialog, "GetYesLabel"):
+                        self.assertEqual(dialog.GetYesLabel().replace("&", ""), "Remove")
+                    if hasattr(dialog, "GetNoLabel"):
+                        self.assertEqual(dialog.GetNoLabel().replace("&", ""), "Cancel")
+                finally:
+                    dialog.Destroy()
+
+                with patch.object(
+                    frame, "_confirm_remove_remembered", return_value=False
+                ):
+                    frame.on_remove_recent(None)
+                self.assertEqual(len(frame.recent), 1)
+                self.assertTrue(frame.remove_recent_btn.IsEnabled())
+
+                with patch.object(
+                    frame, "_confirm_remove_remembered", return_value=True
+                ):
+                    frame.on_remove_recent(None)
+                self.assertEqual(frame.recent, [])
+                self.assertFalse(frame.remove_recent_btn.IsEnabled())
+                self.assertEqual(load_recent(backend.data_dir), [])
             finally:
                 frame._frame.Destroy()
         finally:

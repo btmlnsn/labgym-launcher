@@ -33,9 +33,9 @@ class CliTests(unittest.TestCase):
         code = main(["status"], backend=self.backend, stdin=io.StringIO(), stdout=stdout)
         self.assertEqual(code, 0)
         text = stdout.getvalue()
-        self.assertIn("Rollback to Official Release: available", text)
+        self.assertIn("Restore Official Release: available", text)
         self.assertIn("Official Release checkout:", text)
-        self.assertIn("Selected commit checkout:", text)
+        self.assertIn("Selected Commit checkout:", text)
 
     def test_home_requires_yes_before_install_and_launch(self) -> None:
         stdout = io.StringIO()

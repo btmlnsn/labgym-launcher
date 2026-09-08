@@ -28,12 +28,12 @@ class ConfirmFormatTests(unittest.TestCase):
                 DepChange(name="labgym", current="3.0.0", planned="3.0.1", action="change"),
             ),
             needs_install=True,
-            notes=("Rollback to the latest Official Release remains available.",),
+            notes=("Restore Official Release remains available.",),
             branch_name="demo-branch",
             commit_subject="Add selected-commit UI",
         )
         text = format_confirmation(confirmation)
-        self.assertIn("Action: selected commit", text)
+        self.assertIn("Action: Selected Commit", text)
         self.assertIn("Requested: abc1", text)
         self.assertIn("Source repo: alice/LabGym", text)
         self.assertIn("Checkout: /tmp/demo", text)
@@ -42,7 +42,7 @@ class ConfirmFormatTests(unittest.TestCase):
         self.assertIn("Message: Add selected-commit UI", text)
         self.assertIn("labgym: 3.0.0 -> 3.0.1 (change)", text)
         self.assertIn("Install required: yes", text)
-        self.assertIn("Rollback to the latest Official Release remains available.", text)
+        self.assertIn("Restore Official Release remains available.", text)
 
     def test_official_release_action_is_capitalized(self) -> None:
         confirmation = Confirmation(
@@ -137,9 +137,11 @@ class ConfirmFormatTests(unittest.TestCase):
         self.assertIn("Branch: demo-branch", details)
         self.assertIn("Message: Add selected-commit UI", details)
         summary = format_session_summary(status)
-        self.assertEqual(len(summary.splitlines()), 2)
-        self.assertIn("Session: selected commit", summary)
+        self.assertEqual(len(summary.splitlines()), 4)
+        self.assertIn("Installed: Selected Commit", summary)
         self.assertIn("alice/LabGym @ aaaaaaa", summary)
+        self.assertIn("Official Release session: not running", summary)
+        self.assertIn("Selected Commit session: not running", summary)
         self.assertNotIn("demo-branch", summary)
         self.assertNotIn("Branch:", summary)
         self.assertNotIn("Message:", summary)

@@ -9,7 +9,7 @@ from labgym_launcher.confirm import (
 from labgym_launcher.constants import DEMO, HOME, ROLLBACK
 from labgym_launcher.errors import LauncherError
 from labgym_launcher.models import Confirmation, Selection
-from labgym_launcher.recent import record_recent
+from labgym_launcher.recent import normalize_alias, record_recent
 from labgym_launcher.sessions import session_class_for_action
 
 ALREADY_ACTIVE = "already_active"
@@ -26,7 +26,7 @@ OFFICIAL_RELEASE_INSTALLED_SUCCESS = (
     "Installation complete. LabGym started successfully."
 )
 SELECTED_COMMIT_ALREADY_ACTIVE_SUCCESS = (
-    "The selected commit was already active, so no installation was necessary. "
+    "The Selected Commit was already active, so no installation was necessary. "
     "LabGym started successfully."
 )
 SELECTED_COMMIT_INSTALLED_SUCCESS = (
@@ -36,7 +36,15 @@ OFFICIAL_RELEASE_ALREADY_ACTIVE_NO_LAUNCH = (
     "The Official Release was already active, so no installation was necessary. "
     "LabGym was not launched."
 )
-ROLLBACK_COMPLETE = "Rollback complete. LabGym was not launched."
+RESTORE_COMPLETE = "Restore Official Release complete. LabGym was not launched."
+ROLLBACK_COMPLETE = RESTORE_COMPLETE
+CLI_DEMO_USAGE = "Usage: demo [username/repo-name] <commit>."
+GUI_EMPTY_COMMIT_ERROR = (
+    "Enter a commit hash before launching a Selected Commit. "
+    "Use a full hash or a unique short hash. "
+    "Current environment was not changed."
+)
+REMOVE_REMEMBERED_TITLE = "Remove remembered commit"
 
 
 def prepare_home(backend: LauncherBackend) -> Confirmation:
@@ -127,7 +135,10 @@ def already_active_success_message(target: Optional[str], launch: bool) -> str:
         return OFFICIAL_RELEASE_ALREADY_ACTIVE_NO_LAUNCH
     if launch:
         return SELECTED_COMMIT_ALREADY_ACTIVE_SUCCESS
-    return "The selected commit was already active, so no installation was necessary. LabGym was not launched."
+    return (
+        "The Selected Commit was already active, so no installation was necessary. "
+        "LabGym was not launched."
+    )
 
 
 def applied_success_message(action: str, launch: bool) -> str:
@@ -137,7 +148,7 @@ def applied_success_message(action: str, launch: bool) -> str:
         return SELECTED_COMMIT_INSTALLED_SUCCESS
     if launch:
         return OFFICIAL_RELEASE_INSTALLED_SUCCESS
-    return ROLLBACK_COMPLETE
+    return RESTORE_COMPLETE
 
 
 def apply_if_approved(
@@ -174,22 +185,69 @@ def record_demo_if_needed(recent, confirmation: Confirmation):
 
 
 def format_session_summary(status) -> str:
-    """Compact always-visible session text: mode plus a one-line target."""
+    """Compact always-visible Current State: installed target plus both sessions."""
     mode = display_mode(status.mode)
-    source = status.source_repo or "none"
     if status.mode == DEMO:
-        return "Session: %s\n%s @ %s" % (
-            mode,
-            source,
+        target = "%s @ %s" % (
+            status.source_repo or "none",
             shorten_commit(status.commit, 7),
         )
-    return "Session: %s\n%s" % (mode, source)
+    else:
+        target = status.source_repo or "none"
+    official = "running" if status.official_session_active else "not running"
+    selected = "running" if status.selected_commit_session_active else "not running"
+    return "\n".join(
+        [
+            "Installed: %s" % mode,
+            target,
+            "Official Release session: %s" % official,
+            "Selected Commit session: %s" % selected,
+        ]
+    )
+
+
+def selected_commit_action_enabled(commit: str, working: bool = False) -> bool:
+    return (not working) and bool((commit or "").strip())
+
+
+def remembered_actions_enabled(
+    index: Optional[int],
+    count: int,
+    working: bool = False,
+) -> bool:
+    if working or count <= 0 or index is None:
+        return False
+    return 0 <= index < count
+
+
+def remove_remembered_confirm_text(
+    source_repo: str,
+    commit: str,
+    alias: Optional[str] = None,
+) -> str:
+    identity = normalize_alias(alias) or "%s @ %s" % (
+        source_repo,
+        shorten_commit(commit, 7),
+    )
+    return (
+        "Remove this remembered commit from the list?\n"
+        'Remembered entry: "%s"\n'
+        "This does not uninstall LabGym or change the current environment."
+        % identity
+    )
 
 
 def gui_error_text(exc: BaseException) -> str:
-    if isinstance(exc, LauncherError):
-        return str(exc)
-    return "Unexpected launcher error: %s" % exc
+    if not isinstance(exc, LauncherError):
+        return "Unexpected launcher error: %s" % exc
+    text = str(exc)
+    if (
+        CLI_DEMO_USAGE in text
+        or "A selected commit hash is required." in text
+        or "without a commit hash" in text
+    ):
+        return GUI_EMPTY_COMMIT_ERROR
+    return text
 
 
 def confirmation_display(confirmation: Confirmation) -> str:

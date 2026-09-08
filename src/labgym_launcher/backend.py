@@ -234,7 +234,7 @@ class LauncherBackend:
                 message += (
                     "\nRestoring the previous snapshot also failed. "
                     "The environment may be mixed. "
-                    "Use rollback to restore the latest Official Release.\n"
+                    "Use Restore Official Release to restore the latest Official Release.\n"
                     "%s" % restore_error
                 )
             raise InstallFailedError(message) from exc
@@ -269,7 +269,7 @@ class LauncherBackend:
                     "LabGym exited with status %s. "
                     "Unresolved hashes and dependency failures never reach launch. "
                     "If this followed a successful install, the selected revision remains installed "
-                    "and rollback to the Official Release is available." % code
+                    "and Restore Official Release is available." % code
                 )
             if not wait and resolved_class:
                 pid = self._next_impl_pid
@@ -297,7 +297,7 @@ class LauncherBackend:
                     "LabGym exited with status %s. "
                     "Unresolved hashes and dependency failures never reach launch. "
                     "If this followed a successful install, the selected revision remains installed "
-                    "and rollback to the Official Release is available." % code
+                    "and Restore Official Release is available." % code
                 )
             result = LaunchResult.launched()
             self.last_launch_result = result
@@ -524,7 +524,7 @@ class LauncherBackend:
         notes = list(extra_notes) + [
             "Packages not listed stay as they are in this stage.",
             "LabGym will not be launched if the hash cannot be resolved or install fails.",
-            "Rollback to the latest Official Release remains available.",
+            "Restore Official Release remains available.",
         ]
         if needs_install and all(change.action == "unchanged" for change in changes):
             notes.insert(0, "Install is still required to switch the LabGym source.")

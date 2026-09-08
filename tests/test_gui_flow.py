@@ -68,7 +68,10 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(self.launched, 1)
         self.assertTrue((self.data_dir / "state.json").exists())
         summary = format_session_summary(self.backend.status())
-        self.assertIn("Session: Official Release", summary)
+        self.assertIn("Installed: Official Release", summary)
+        self.assertIn("Official Release session: running", summary)
+        self.assertIn("Selected Commit session: not running", summary)
+        self.assertEqual(len(summary.splitlines()), 4)
 
     def test_invalid_hash_does_not_install(self) -> None:
         with self.assertRaises(InvalidHashError):
@@ -85,9 +88,11 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(recent[0].commit, DEMO_SHA)
         status = self.backend.status()
         summary = format_session_summary(status)
-        self.assertIn("Session: selected commit", summary)
+        self.assertIn("Installed: Selected Commit", summary)
         self.assertIn("umyelab/LabGym @ %s" % DEMO_SHA[:7], summary)
-        self.assertEqual(len(summary.splitlines()), 2)
+        self.assertIn("Official Release session: not running", summary)
+        self.assertIn("Selected Commit session: running", summary)
+        self.assertEqual(len(summary.splitlines()), 4)
         self.assertNotIn("demo-branch", summary)
         self.assertNotIn("worktrees", summary)
         self.assertNotIn("Branch:", summary)
@@ -204,6 +209,104 @@ def _metadata_ops(runner: FakeRunner):
         ):
             ops.append(call)
     return ops
+
+
+class GuiSummaryAndErrorTests(unittest.TestCase):
+    def test_compact_summary_includes_both_running_flags(self) -> None:
+        from labgym_launcher.models import LauncherStatus
+
+        status = LauncherStatus(
+            mode="demo",
+            requested="abc1",
+            resolved="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            pip_spec="/tmp/demo",
+            source_repo="alice/LabGym",
+            commit="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            pypi_version=None,
+            installed_labgym="3.0.1",
+            installed_source="file:///tmp/demo",
+            checkout_path="/tmp/demo",
+            branch_name="demo-branch",
+            commit_subject="Add selected-commit UI",
+            home_checkout="/tmp/home",
+            demo_checkout="/tmp/demo",
+            data_dir="/tmp/data",
+            rollback_available=True,
+            official_session_active=True,
+            selected_commit_session_active=True,
+        )
+        summary = format_session_summary(status)
+        self.assertEqual(len(summary.splitlines()), 4)
+        self.assertIn("Installed: Selected Commit", summary)
+        self.assertIn("alice/LabGym @ aaaaaaa", summary)
+        self.assertIn("Official Release session: running", summary)
+        self.assertIn("Selected Commit session: running", summary)
+        self.assertNotIn("Active checkout:", summary)
+        self.assertNotIn("Data dir:", summary)
+
+    def test_gui_error_rewrites_cli_demo_usage(self) -> None:
+        from labgym_launcher.errors import InvalidHashError
+        from labgym_launcher.gui_flow import (
+            CLI_DEMO_USAGE,
+            GUI_EMPTY_COMMIT_ERROR,
+            gui_error_text,
+            selected_commit_action_enabled,
+            remembered_actions_enabled,
+            remove_remembered_confirm_text,
+        )
+
+        usage_error = InvalidHashError(
+            "Received source repo 'umyelab/LabGym' without a commit hash. "
+            "%s Current environment was not changed." % CLI_DEMO_USAGE
+        )
+        self.assertEqual(gui_error_text(usage_error), GUI_EMPTY_COMMIT_ERROR)
+        self.assertNotIn("Usage: demo", gui_error_text(usage_error))
+        required = InvalidHashError(
+            "A selected commit hash is required. %s Current environment was not changed."
+            % CLI_DEMO_USAGE
+        )
+        self.assertEqual(gui_error_text(required), GUI_EMPTY_COMMIT_ERROR)
+        other = InvalidHashError(
+            "Selected commit 'master' is not a git commit hash. "
+            "Current environment was not changed."
+        )
+        self.assertIn("not a git commit hash", gui_error_text(other))
+        self.assertNotIn("Usage: demo", gui_error_text(other))
+
+        self.assertFalse(selected_commit_action_enabled(""))
+        self.assertFalse(selected_commit_action_enabled("   "))
+        self.assertTrue(selected_commit_action_enabled("abc1"))
+        self.assertFalse(selected_commit_action_enabled("abc1", working=True))
+        self.assertFalse(remembered_actions_enabled(-1, 0))
+        self.assertFalse(remembered_actions_enabled(None, 2))
+        self.assertTrue(remembered_actions_enabled(0, 2))
+        self.assertFalse(remembered_actions_enabled(0, 2, working=True))
+
+        aliased = remove_remembered_confirm_text(
+            "alice/LabGym",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "Courtship demo",
+        )
+        self.assertIn("Remove this remembered commit from the list?", aliased)
+        self.assertIn('Remembered entry: "Courtship demo"', aliased)
+        self.assertNotIn("alice/LabGym @", aliased)
+        plain = remove_remembered_confirm_text(
+            "alice/LabGym",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "",
+        )
+        self.assertIn('Remembered entry: "alice/LabGym @ aaaaaaa"', plain)
+        self.assertIn(
+            "This does not uninstall LabGym or change the current environment.",
+            plain,
+        )
+
+    def test_restore_success_message_avoids_rollback_word(self) -> None:
+        from labgym_launcher.gui_flow import applied_success_message
+
+        text = applied_success_message("rollback", False)
+        self.assertIn("Restore Official Release complete", text)
+        self.assertNotIn("Rollback complete", text)
 
 
 if __name__ == "__main__":
