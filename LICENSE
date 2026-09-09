@@ -1,21 +1,40 @@
-MIT License
+LabGym Launcher Source-Available License
+Copyright (c) 2026 Bobby Tomlinson and contributors.
+All rights reserved.
 
-Copyright (c) 2026 Bobby Tomlinson
+This software is source-available. It is not open source, is not
+OSI-approved, and is not MIT-licensed.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+LabGym Launcher is a companion tool. It is not LabGym, does not
+replace LabGym, and does not speak for the LabGym project.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Authorized User means a person who has been expressly permitted to
+use the Software for LabGym team evaluation or development by an
+authorized project maintainer, copyright holder, controlled team
+distribution, or repository access granted for that purpose. Public
+visibility of the repository by itself does not make someone an
+Authorized User.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+Written permission means permission from an authorized project
+maintainer or copyright holder.
+
+Subject to this license, each Authorized User may view, install, run,
+and modify the Software solely for internal LabGym team evaluation
+and development, including installing it from the official repository
+designated for that purpose.
+
+Without written permission, you may not redistribute the Software,
+publish copies, use it commercially, sublicense it, or claim
+endorsement, affiliation, or that this software is LabGym itself.
+
+Third-party dependencies keep their own licenses. This license does
+not grant rights in LabGym or in any other third-party software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
