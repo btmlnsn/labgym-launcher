@@ -196,6 +196,11 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(status.installed_labgym, "3.0.0")
         self.assertEqual(status.home_checkout, str(self.home_path))
         self.assertEqual(status.demo_checkout, str(self.demo_path))
+        self.assertIsNone(status.launch_target)
+        from labgym_launcher.confirm import format_status
+
+        text = format_status(status)
+        self.assertIn("Launch target: none", text)
 
     def test_rollback_uses_home_checkout(self) -> None:
         confirmation = self.backend.prepare_rollback()
@@ -216,6 +221,65 @@ class BackendTests(unittest.TestCase):
         self.runner.pip_list = []
         preflight = self.backend.preflight_official_release()
         self.assertFalse(preflight.skip_transition)
+
+    def test_preflight_does_not_skip_when_pypi_has_newer_release(self) -> None:
+        versions = ["3.0.1"]
+
+        def fetch_version() -> str:
+            return versions[-1]
+
+        backend = LauncherBackend(
+            data_dir=self.data_dir,
+            runner=self.runner,
+            python="python",
+            fetch_pypi_version=fetch_version,
+            launch_impl=self._launch,
+        )
+        confirmation = backend.prepare_home()
+        backend.apply(confirmation, approved=True)
+        status_before = backend.status()
+        self.assertEqual(status_before.resolved, "3.0.1")
+        self.assertEqual(status_before.pypi_version, "3.0.1")
+        self.assertEqual(status_before.launch_target, str(self.home_path))
+
+        versions.append("3.1.1")
+        self.runner.pip_report = {
+            "install": [{"metadata": {"name": "LabGym", "version": "3.1.1"}}]
+        }
+        preflight = backend.preflight_official_release()
+        self.assertFalse(preflight.skip_transition)
+
+        refreshed = backend.prepare_home()
+        self.assertEqual(refreshed.resolved, "3.1.1")
+        self.assertEqual(refreshed.pypi_version, "3.1.1")
+        self.assertTrue(refreshed.needs_install)
+        backend.apply(refreshed, approved=True)
+
+        status_after = backend.status()
+        self.assertEqual(status_after.resolved, "3.1.1")
+        self.assertEqual(status_after.pypi_version, "3.1.1")
+        self.assertEqual(status_after.checkout_path, str(self.home_path))
+        self.assertEqual(status_after.launch_target, str(self.home_path))
+        self.assertEqual(status_after.home_checkout, str(self.home_path))
+
+    def test_preflight_pypi_failure_preserves_state(self) -> None:
+        from labgym_launcher.errors import PypiError
+        from labgym_launcher.state import load_state
+
+        confirmation = self.backend.prepare_home()
+        self.backend.apply(confirmation, approved=True)
+        before = load_state(self.data_dir)
+
+        def boom() -> str:
+            raise PypiError(
+                "Could not read the latest official LabGym release from PyPI. "
+                "Current environment was not changed."
+            )
+
+        self.backend.fetch_pypi_version = boom
+        with self.assertRaises(PypiError):
+            self.backend.preflight_official_release()
+        self.assertEqual(load_state(self.data_dir), before)
 
     def test_prepare_demo_records_source_branch_not_detached(self) -> None:
         confirmation = self.backend.prepare_demo("abc1def")

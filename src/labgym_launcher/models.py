@@ -47,6 +47,7 @@ class LauncherStatus:
     demo_checkout: str
     data_dir: str
     rollback_available: bool
+    launch_target: Optional[str] = None
     official_session_active: bool = False
     selected_commit_session_active: bool = False
 
