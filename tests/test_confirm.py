@@ -173,6 +173,7 @@ class ConfirmFormatTests(unittest.TestCase):
         self.assertIn("Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", details)
         self.assertIn("Branch: demo-branch", details)
         self.assertIn("Message: Add selected-commit UI", details)
+        self.assertIn("Launch target: none", details)
         summary = format_session_summary(status)
         self.assertEqual(len(summary.splitlines()), 4)
         self.assertIn("Installed: Selected Commit", summary)

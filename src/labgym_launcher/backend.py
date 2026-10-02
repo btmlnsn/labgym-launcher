@@ -379,8 +379,12 @@ class LauncherBackend:
         state = load_state(self.data_dir)
         installed = self.pip.list_installed()
         source = self.pip.labgym_source_line()
+        mode = state_value(state, "mode")
+        launch_target = self._checkout_for_session(
+            session_class_for_action(mode)
+        ) or state_value(state, "checkout_path")
         return LauncherStatus(
-            mode=state_value(state, "mode"),
+            mode=mode,
             requested=state_value(state, "requested"),
             resolved=state_value(state, "resolved"),
             pip_spec=state_value(state, "pip_spec"),
@@ -396,6 +400,7 @@ class LauncherBackend:
             demo_checkout=str(self.demo_path),
             data_dir=str(self.data_dir),
             rollback_available=True,
+            launch_target=launch_target,
             official_session_active=self.sessions.has_active(OFFICIAL_RELEASE_SESSION),
             selected_commit_session_active=self.sessions.has_active(
                 SELECTED_COMMIT_SESSION
@@ -443,11 +448,18 @@ class LauncherBackend:
         if not self._labgym_is_installed():
             return False
         commit = state_value(state, "commit")
-        return self._checkout_matches_target(
+        if not self._checkout_matches_target(
             self.home_path,
             commit,
             github_url(self.canonical_source),
-        )
+        ):
+            return False
+        persisted = state_value(state, "pypi_version") or state_value(state, "resolved")
+        if not persisted:
+            return False
+        # May raise PypiError; callers must not treat that as "already active".
+        latest = self.fetch_pypi_version()
+        return persisted == latest
 
     def _selected_commit_is_active(self, source: str, requested: str) -> bool:
         state = load_state(self.data_dir)

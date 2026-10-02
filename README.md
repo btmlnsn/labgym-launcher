@@ -6,7 +6,7 @@ GitHub commit. It is **not LabGym**. It does not replace LabGym, publish
 LabGym, or speak for the LabGym project.
 
 This repository is the standalone launcher package (`labgym-launcher`).
-The current milestone is **0.2.0**. Internal rollout is a GitHub tag install,
+The current milestone is **0.2.1**. Internal rollout is a GitHub tag install,
 not PyPI, and not a desktop installer.
 
 ## Install
@@ -15,18 +15,18 @@ Requires Python 3.9 or newer, Git on `PATH`, and an existing Python
 environment where you already run LabGym (or are prepared to install it).
 The GUI extra installs wxPython.
 
-The expected internal tag is `v0.2.0`. That tag is not assumed to exist
+The expected internal tag is `v0.2.1`. That tag is not assumed to exist
 yet. Create and push that tag before sending the install command to
 teammates.
 
 ```bash
-python -m pip install "labgym-launcher[gui] @ git+https://github.com/btmlnsn/labgym-launcher.git@v0.2.0"
+python -m pip install "labgym-launcher[gui] @ git+https://github.com/btmlnsn/labgym-launcher.git@v0.2.1"
 ```
 
 CLI-only install (no wxPython):
 
 ```bash
-python -m pip install "labgym-launcher @ git+https://github.com/btmlnsn/labgym-launcher.git@v0.2.0"
+python -m pip install "labgym-launcher @ git+https://github.com/btmlnsn/labgym-launcher.git@v0.2.1"
 ```
 
 PyPI is not a distribution path for LabGym Launcher. A later public
@@ -167,7 +167,7 @@ wheel; other Linux distros may need a local wxPython build.
 Install the GUI extra into the same environment:
 
 ```bash
-python -m pip install "labgym-launcher[gui] @ git+https://github.com/btmlnsn/labgym-launcher.git@v0.2.0"
+python -m pip install "labgym-launcher[gui] @ git+https://github.com/btmlnsn/labgym-launcher.git@v0.2.1"
 ```
 
 **`git` not found**

@@ -167,6 +167,7 @@ def format_status(status: LauncherStatus) -> str:
             "Installed LabGym: %s" % (status.installed_labgym or "not installed"),
             "Installed source: %s" % (status.installed_source or "unknown"),
             "Active checkout: %s" % (status.checkout_path or "none"),
+            "Launch target: %s" % (status.launch_target or "none"),
             "Official Release checkout: %s" % status.home_checkout,
             "Selected Commit checkout: %s" % status.demo_checkout,
             "Data dir: %s" % status.data_dir,

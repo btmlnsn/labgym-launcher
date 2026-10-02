@@ -201,6 +201,50 @@ class GuiFlowTests(unittest.TestCase):
         self.assertEqual(selection.outcome, NEEDS_CONFIRM)
         self.assertIsNotNone(selection.confirmation)
 
+    def test_stale_home_checkout_when_newer_pypi_available(self) -> None:
+        versions = ["3.0.1"]
+
+        def fetch_version() -> str:
+            return versions[-1]
+
+        backend = LauncherBackend(
+            data_dir=self.data_dir,
+            runner=self.runner,
+            python="python",
+            fetch_pypi_version=fetch_version,
+            launch_impl=self._launch,
+        )
+        confirmation = prepare_home(backend)
+        apply_if_approved(backend, confirmation, approved=True, launch=False)
+        self.assertEqual(backend.status().resolved, "3.0.1")
+
+        versions.append("3.1.1")
+        self.runner.pip_report = {
+            "install": [{"metadata": {"name": "LabGym", "version": "3.1.1"}}]
+        }
+        self.runner.calls.clear()
+        selection = select_official_release(backend)
+        self.assertEqual(selection.outcome, NEEDS_CONFIRM)
+        self.assertIsNotNone(selection.confirmation)
+        self.assertEqual(selection.confirmation.resolved, "3.1.1")
+        self.assertEqual(selection.confirmation.pypi_version, "3.1.1")
+        self.assertTrue(selection.confirmation.needs_install)
+        self.assertTrue(_transition_ops(self.runner))
+
+        apply_if_approved(
+            backend, selection.confirmation, approved=True, launch=True
+        )
+        status = backend.status()
+        self.assertEqual(status.resolved, "3.1.1")
+        self.assertEqual(status.pypi_version, "3.1.1")
+        self.assertEqual(status.launch_target, str(self.data_dir / "worktrees" / "home"))
+        self.assertEqual(self.launched, 1)
+
+        self.runner.calls.clear()
+        again = select_official_release(backend)
+        self.assertEqual(again.outcome, ALREADY_ACTIVE)
+        self.assertEqual(_transition_ops(self.runner), [])
+
 
 def _transition_ops(runner: FakeRunner):
     ops = []
